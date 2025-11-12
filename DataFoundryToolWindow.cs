@@ -8,7 +8,7 @@ namespace data_foundry
     {
         public DataFoundryToolWindow() : base(null)
         {
-            this.Caption = "DataFoundry";
+            this.Caption = "Data Foundry";
             this.Content = new DataFoundryToolWindowControl();
         }
     }

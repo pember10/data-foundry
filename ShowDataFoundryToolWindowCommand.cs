@@ -23,15 +23,15 @@ namespace data_foundry
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
             OleMenuCommandService commandService = await package.GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService;
-            new ShowDataFoundryToolWindowCommand(package, commandService);
+            _ = new ShowDataFoundryToolWindowCommand(package, commandService);
         }
 
         private void Execute(object sender, EventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            package.JoinableTaskFactory.RunAsync(async delegate
+            _ = package.JoinableTaskFactory.RunAsync(async delegate
             {
-                ToolWindowPane window = await package.ShowToolWindowAsync(
+                _ = await package.ShowToolWindowAsync(
                     typeof(DataFoundryToolWindow),
                     0,
                     true,

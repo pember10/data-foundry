@@ -80,7 +80,7 @@
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Project Name:" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ProjectNameText" Text="Api.Db" Margin="0,0,0,8"/>
 
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Target Database:" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Target Connection:" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TargetDatabaseConnection" Text="[(LOCALDB)\CORE].[Core.Db]" Margin="0,0,0,8"/>
 
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Last Deployment:" FontWeight="SemiBold"/>

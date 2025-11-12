@@ -12,7 +12,7 @@
 			<Button guid="guidDataFoundryPackageCmdSet" id="cmdidShowDataFoundryToolWindow" priority="0x0100" type="Button">
 				<Parent guid="guidDataFoundryPackageCmdSet" id="DataFoundryGroup" />
 				<Strings>
-					<ButtonText>DataFoundry</ButtonText>
+					<ButtonText>Data Foundry</ButtonText>
 				</Strings>
 			</Button>
 		</Buttons>
