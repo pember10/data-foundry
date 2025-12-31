@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.VisualStudio.Shell;
+using data_foundry.Options;
 using Task = System.Threading.Tasks.Task;
 
 namespace data_foundry
@@ -28,6 +29,7 @@ namespace data_foundry
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(typeof(DataFoundryToolWindow))]
+    [ProvideOptionPage(typeof(DataFoundryOptions), "Data Foundry", "General", 0, 0, true)]
     [Guid(data_foundryPackage.PackageGuidString)]
     public sealed class data_foundryPackage : AsyncPackage
     {
@@ -35,6 +37,7 @@ namespace data_foundry
         /// data_foundryPackage GUID string.
         /// </summary>
         public const string PackageGuidString = "e61986fa-dabb-48a4-a118-61fd5f54b8c3";
+        public static data_foundryPackage Instance { get; private set; }
 
         #region Package Members
 
@@ -47,6 +50,7 @@ namespace data_foundry
         /// <returns>A task representing the async work of package initialization, or an already completed task if there is none. Do not return null from this method.</returns>
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
+            Instance = this;
             // When initialized asynchronously, the current thread may be a background thread at this point.
             // Do any initialization that requires the UI thread after switching to the UI thread.
             await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);

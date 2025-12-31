@@ -1,220 +1,151 @@
 using System;
-using System.Collections.ObjectModel;
-using System.Windows;
+using System.Linq;
 using System.Windows.Controls;
-using data_foundry.Models;
+using System.Windows;
+using data_foundry.Views.Controls;
+using EnvDTE;
+using Microsoft.VisualStudio.Shell;
+using Task = System.Threading.Tasks.Task;
 
 namespace data_foundry
 {
     public partial class DataFoundryToolWindowControl : UserControl
     {
-        private ObservableCollection<DatabaseChange> _allChanges;
+        private DTE _dte;
+        private SolutionEvents _solutionEvents;
 
         public DataFoundryToolWindowControl()
         {
             InitializeComponent();
-            InitializeDummyData();
-            WireUpEventHandlers();
-        }
-
-        private void InitializeDummyData()
-        {
-            // Initialize dummy database changes
-            _allChanges = new ObservableCollection<DatabaseChange>
-            {
-                new DatabaseChange
-                {
-                    Type = "Table",
-                    ObjectName = "Users",
-                    Schema = "dbo",
-                    ChangeType = "Modified",
-                    ModifiedDate = "2025-01-11 14:15:22"
-                },
-                new DatabaseChange
-                {
-                    Type = "Stored Procedure",
-                    ObjectName = "GetUserById",
-                    Schema = "dbo",
-                    ChangeType = "Added",
-                    ModifiedDate = "2025-01-11 13:45:10"
-                },
-                new DatabaseChange
-                {
-                    Type = "Table",
-                    ObjectName = "Orders",
-                    Schema = "dbo",
-                    ChangeType = "Modified",
-                    ModifiedDate = "2025-01-11 12:30:05"
-                },
-                new DatabaseChange
-                {
-                    Type = "View",
-                    ObjectName = "vw_ActiveUsers",
-                    Schema = "dbo",
-                    ChangeType = "Modified",
-                    ModifiedDate = "2025-01-11 11:22:33"
-                },
-                new DatabaseChange
-                {
-                    Type = "Function",
-                    ObjectName = "fn_CalculateTotal",
-                    Schema = "dbo",
-                    ChangeType = "Added",
-                    ModifiedDate = "2025-01-11 10:15:44"
-                },
-                new DatabaseChange
-                {
-                    Type = "Stored Procedure",
-                    ObjectName = "UpdateOrderStatus",
-                    Schema = "dbo",
-                    ChangeType = "Modified",
-                    ModifiedDate = "2025-01-11 09:50:12"
-                },
-                new DatabaseChange
-                {
-                    Type = "Table",
-                    ObjectName = "Products",
-                    Schema = "dbo",
-                    ChangeType = "Modified",
-                    ModifiedDate = "2025-01-11 09:30:00"
-                },
-                new DatabaseChange
-                {
-                    Type = "Trigger",
-                    ObjectName = "trg_AuditUsers",
-                    Schema = "dbo",
-                    ChangeType = "Added",
-                    ModifiedDate = "2025-01-11 08:45:55"
-                }
-            };
-
-            ChangesDataGrid.ItemsSource = _allChanges;
-            UpdateChangesCount();
-        }
-
-        private void WireUpEventHandlers()
-        {
-            // Overview tab buttons
-            RefreshChangesButton.Click += RefreshChangesButton_Click;
-            CompareDatabasesButton.Click += CompareDatabasesButton_Click;
-            DeployButton.Click += DeployButton_Click;
-
-            // Changes tab
-            RefreshChangesBtn.Click += RefreshChangesButton_Click;
-            ChangeTypeFilter.SelectionChanged += ChangeTypeFilter_SelectionChanged;
-
-            // Deployment tab
-            DeployChangesButton.Click += DeployChangesButton_Click;
-
-            // Settings tab
-            BrowseScriptsButton.Click += BrowseScriptsButton_Click;
-            SaveSettingsButton.Click += SaveSettingsButton_Click;
-        }
-
-        private void RefreshChangesButton_Click(object sender, RoutedEventArgs e)
-        {
-            // This will eventually call PowerShell scripts
-            DeploymentLogTextBox.AppendText($"\n[{DateTime.Now:HH:mm:ss}] Refreshing database changes...");
-            MessageBox.Show("Refreshing database changes.\n\nThis will eventually execute PowerShell scripts to detect changes.", 
-                "Refresh Changes", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private void CompareDatabasesButton_Click(object sender, RoutedEventArgs e)
-        {
-            DeploymentLogTextBox.AppendText($"\n[{DateTime.Now:HH:mm:ss}] Starting database comparison...");
-            MessageBox.Show("Comparing databases.\n\nThis will eventually execute PowerShell scripts to compare schema differences.", 
-                "Compare Databases", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private void DeployButton_Click(object sender, RoutedEventArgs e)
-        {
-            DeployChangesButton_Click(sender, e);
-        }
-
-        private void DeployChangesButton_Click(object sender, RoutedEventArgs e)
-        {
-            var server = DeployServerTextBox.Text;
-            var database = DeployDatabaseTextBox.Text;
-            var createBackup = BackupCheckBox.IsChecked == true;
-
-            DeploymentLogTextBox.Text = $"[{DateTime.Now:HH:mm:ss}] Starting deployment...\n";
-            DeploymentLogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Target Server: {server}\n");
-            DeploymentLogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Target Database: {database}\n");
             
-            if (createBackup)
+            // Defer initialization to avoid blocking the constructor
+            Loaded += OnLoaded;
+        }
+
+        private async void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            // Only initialize once
+            Loaded -= OnLoaded;
+            
+            try
             {
-                DeploymentLogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Creating backup...\n");
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                InitializeDteEvents();
+                UpdateContent();
             }
-
-            DeploymentLogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Analyzing changes...\n");
-            DeploymentLogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Found {_allChanges.Count} changes to deploy.\n");
-            DeploymentLogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] Ready to execute deployment.\n");
-            DeploymentLogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] This will eventually execute PowerShell deployment scripts.\n");
-
-            MessageBox.Show($"Deployment prepared for:\n\nServer: {server}\nDatabase: {database}\nChanges: {_allChanges.Count}\n\nThis will eventually execute PowerShell scripts to deploy changes.", 
-                "Deploy Changes", MessageBoxButton.OK, MessageBoxImage.Information);
+            catch (Exception ex)
+            {
+                // Log the exception - async void methods can crash the process if unhandled
+                System.Diagnostics.Debug.WriteLine($"Error initializing DataFoundry tool window: {ex}");
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                MessageBox.Show($"Failed to initialize Data Foundry: {ex.Message}", 
+                    "Initialization Error", 
+                    MessageBoxButton.OK, 
+                    MessageBoxImage.Error);
+            }
         }
 
-        private void ChangeTypeFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void InitializeDteEvents()
         {
-            if (ChangeTypeFilter.SelectedItem == null || ChangesDataGrid == null)
-                return;
-
-            var selectedFilter = ((ComboBoxItem)ChangeTypeFilter.SelectedItem).Content.ToString();
-            
-            if (selectedFilter == "All Changes")
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _dte = Package.GetGlobalService(typeof(DTE)) as DTE;
+            if (_dte != null && _dte.Events != null)
             {
-                ChangesDataGrid.ItemsSource = _allChanges;
+                _solutionEvents = _dte.Events.SolutionEvents;
+                _solutionEvents.Opened += SolutionOrProjectChanged_NoArgs;
+                _solutionEvents.AfterClosing += SolutionOrProjectChanged_NoArgs;
+                _solutionEvents.ProjectAdded += SolutionOrProjectChanged_Project;
+                _solutionEvents.ProjectRemoved += SolutionOrProjectChanged_Project;
+            }
+        }
+
+        private void SolutionOrProjectChanged_NoArgs()
+        {
+            // Fire and forget is acceptable for event handlers that update UI
+            _ = UpdateContentAsync();
+        }
+
+        private void SolutionOrProjectChanged_Project(Project proj)
+        {
+            // Fire and forget is acceptable for event handlers that update UI
+            _ = UpdateContentAsync();
+        }
+
+        private async Task UpdateContentAsync()
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            UpdateContent();
+        }
+
+        private void UpdateContent()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            
+            if (HasSqlProjectInSolution())
+            {
+                MainContent.Content = new TabbedContentControl();
             }
             else
             {
-                var filtered = new ObservableCollection<DatabaseChange>();
-                foreach (var change in _allChanges)
+                MainContent.Content = new NoSqlProjectMessageControl();
+            }
+        }
+
+        private bool HasSqlProjectInSolution()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (_dte?.Solution == null || _dte.Solution.Projects == null)
+                return false;
+
+            foreach (Project project in _dte.Solution.Projects)
+            {
+                try
                 {
-                    if (change.Type == selectedFilter || 
-                        (selectedFilter == "Stored Procedures" && change.Type == "Stored Procedure"))
+                    if (project == null || string.IsNullOrWhiteSpace(project.FullName))
                     {
-                        filtered.Add(change);
+                        // Prefer early return
+                        continue;
+                    }
+
+                    if (project.FullName.ToLowerInvariant().EndsWith(".sqlproj"))
+                    {
+                        return true;
                     }
                 }
-                ChangesDataGrid.ItemsSource = filtered;
+                catch (System.NotImplementedException)
+                {
+                    // Skip projects that do not implement FullName
+                }
             }
-            
-            UpdateChangesCount();
+            return false;
         }
+    }
 
-        private void UpdateChangesCount()
+    // Helper control to host the tabbed UI
+    public class TabbedContentControl : ContentControl
+    {
+        public TabbedContentControl()
         {
-            if (ChangesDataGrid.Items != null && ChangesCountText != null)
+            Content = new Grid
             {
-                ChangesCountText.Text = $"Total changes: {ChangesDataGrid.Items.Count}";
-            }
-        }
-
-        private void BrowseScriptsButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Using WPF OpenFileDialog as a workaround for folder selection
-            // In a full implementation, consider using Windows API Code Pack's CommonOpenFileDialog
-            var result = MessageBox.Show(
-                $"Current Scripts Path:\n{ScriptsPathTextBox.Text}\n\nWould you like to change it?\n\n(Full folder browser will be implemented in a future version)", 
-                "Browse Scripts Folder", 
-                MessageBoxButton.YesNo, 
-                MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Yes)
-            {
-                // Placeholder for folder browser
-                // TODO: Implement proper folder browser dialog
-                MessageBox.Show("Folder browser functionality will be added in the next version.\n\nFor now, please manually edit the path in the text box.", 
-                    "Feature Coming Soon", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-        }
-
-        private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            // This will eventually save settings to user config
-            MessageBox.Show("Settings saved successfully!\n\nSettings will be persisted in future versions.", 
-                "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+                Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#F3F3F3"),
+                Children =
+                {
+                    new TabControl
+                    {
+                        Margin = new Thickness(0),
+                        BorderThickness = new Thickness(0),
+                        Background = System.Windows.Media.Brushes.White,
+                        Items =
+                        {
+                            new TabItem { Header = "Overview", Content = new OverviewTabControl() },
+                            new TabItem { Header = "Changes", Content = new ChangesTabControl() },
+                            new TabItem { Header = "Deployment", Content = new DeploymentTabControl() }
+                            // SettingsTabControl intentionally not referenced
+                        }
+                    }
+                }
+            };
         }
     }
 }
