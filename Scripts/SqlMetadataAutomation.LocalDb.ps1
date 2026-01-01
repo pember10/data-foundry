@@ -1,1 +1,0 @@
-.\SqlMetadataAutomation.ps1 -TargetDatabase "Core.Db" -TargetServer "(LocalDB)\Core" -MigrationsPath ..\..\Api.Db\Migrations -ConfirmTargetMigration -DetectChanges

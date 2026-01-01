@@ -45,6 +45,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="AssemblyResolver.cs" />
     <Compile Include="Config\DataFoundryConfig.cs" />
     <Compile Include="Config\TableListConfig.cs" />
     <Compile Include="Constants.cs" />
@@ -53,6 +54,7 @@
       <DependentUpon>DataFoundryToolWindowControl.xaml</DependentUpon>
     </Compile>
     <Compile Include="data_foundryPackage.cs" />
+    <Compile Include="Helpers\PathHelper.cs" />
     <Compile Include="Models\DatabaseChange.cs" />
     <Compile Include="Models\MigrationAction.cs" />
     <Compile Include="Models\MigrationConfig.cs" />
@@ -69,10 +71,12 @@
     <Compile Include="Services\ChangeDetectionService.cs" />
     <Compile Include="Services\MigrationScriptGenerator.cs" />
     <Compile Include="Services\MigrationScriptManager.cs" />
+    <Compile Include="Services\OutputWindowLogger.cs" />
     <Compile Include="Services\ServicesHelper.cs" />
     <Compile Include="Services\SqlMigrationOrchestrator.cs" />
     <Compile Include="Services\SqlMigrationOrchestratorFactory.cs" />
     <Compile Include="Services\SqlMigrationRepository.cs" />
+    <Compile Include="Services\TrackedTablesManager.cs" />
     <Compile Include="ShowDataFoundryToolWindowCommand.cs" />
     <Compile Include="Views\Controls\ChangesTabControl.xaml.cs">
       <DependentUpon>ChangesTabControl.xaml</DependentUpon>
@@ -91,19 +95,21 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="app.config" />
-    <None Include="Config\tablelist.json">
+    <Content Include="app.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Docs\SqlMigrationOrchestrator_Integration.md" />
-    <None Include="Docs\SQL_Injection_Prevention.md" />
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="Config\tablelist.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <None Include="Docs\Assembly_Binding_Redirects.md" />
+    <None Include="Docs\Quick_Start_Guide.md" />
+    <None Include="Docs\UI_Integration_Complete.md" />
     <None Include="README.md" />
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
-    <None Include="Scripts\config.json" />
-    <None Include="Scripts\SqlMetadataAutomation.LocalDb.ps1" />
-    <None Include="Scripts\SqlMetadataAutomation.ps1" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.Data.ConnectionUI.Dialog">
@@ -160,8 +166,8 @@
   <ItemGroup>
     <Content Include="Config\MigrationLogTableDefinition.sql">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
-    <Content Include="Scripts\MigrationLogTableDefinition.sql" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="SqlMetadataAutomation\" />

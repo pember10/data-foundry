@@ -21,15 +21,19 @@
                         <ColumnDefinition Width="150"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
+                    
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Server:" VerticalAlignment="Center" Margin="0,0,0,12"/>
                     <TextBox Grid.Row="0" Grid.Column="1" x:Name="DeployServerTextBox" Text="localhost\SQLEXPRESS" Margin="0,0,0,12" Padding="6"/>
+                    
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Database:" VerticalAlignment="Center" Margin="0,0,0,12"/>
                     <TextBox Grid.Row="1" Grid.Column="1" x:Name="DeployDatabaseTextBox" Text="ProductionDB" Margin="0,0,0,12" Padding="6"/>
+                    
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Authentication:" VerticalAlignment="Center" Margin="0,0,0,12"/>
                     <ComboBox Grid.Row="2" Grid.Column="1" x:Name="AuthenticationComboBox" Margin="0,0,0,12">
                         <ComboBoxItem Content="Windows Authentication" IsSelected="True"/>
                         <ComboBoxItem Content="SQL Server Authentication"/>
                     </ComboBox>
+                    
                     <CheckBox Grid.Row="3" Grid.Column="1" Content="Create backup before deployment" IsChecked="True" x:Name="BackupCheckBox"/>
                 </Grid>
             </Border>

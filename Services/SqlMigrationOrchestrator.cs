@@ -1,5 +1,6 @@
 using data_foundry.Models;
 using data_foundry.Options;
+using data_foundry.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
@@ -61,20 +62,45 @@ namespace data_foundry.Services
                 throw new InvalidOperationException($"SQL Project '{options.SqlProject}' not found in solution.");
             }
 
-            var sqlProjectDir = Path.GetDirectoryName(sqlProjectPath);
-            var migrationsPath = Path.Combine(sqlProjectDir, options.MigrationsFolder ?? Folders.Migrations);
+            var sqlProjectDir = PathHelper.GetSafeDirectoryName(sqlProjectPath);
+            if (string.IsNullOrEmpty(sqlProjectDir))
+            {
+                throw new InvalidOperationException($"Invalid SQL Project path: {sqlProjectPath}");
+            }
+
+            var migrationsPath = PathHelper.SafeCombine(sqlProjectDir, options.MigrationsFolder ?? Folders.Migrations);
+            if (string.IsNullOrEmpty(migrationsPath))
+            {
+                throw new InvalidOperationException($"Invalid migrations path combination: {sqlProjectDir} + {options.MigrationsFolder}");
+            }
+
             _outputMigrationDir = migrationsPath;
 
-            // Config path - assume it's in Config folder at project root
-            // NOTE: This is intentionally not using `options` to make it difficult to change the config
-            _configPath = Path.Combine(sqlProjectDir, Folders.Config, "tablelist.json");
-            _migrationLogSchemaPath = Path.Combine(sqlProjectDir, Folders.Config, "MigrationLogTableDefinition.sql");
+            // Config path - use extension installation directory with fallback
+            var installDir = PathHelper.GetExtensionInstallDirectory(typeof(SqlMigrationOrchestrator));
+            var configDir = PathHelper.SafeCombine(installDir, Folders.Config);
+            
+            if (string.IsNullOrEmpty(configDir) || !PathHelper.EnsureDirectoryExists(configDir))
+            {
+                throw new InvalidOperationException("Failed to create or access config directory.");
+            }
+
+            _configPath = PathHelper.SafeCombine(configDir, "tablelist.json");
+            _migrationLogSchemaPath = PathHelper.SafeCombine(configDir, "MigrationLogTableDefinition.sql");
+
+            if (string.IsNullOrEmpty(_configPath) || string.IsNullOrEmpty(_migrationLogSchemaPath))
+            {
+                throw new InvalidOperationException("Failed to construct config file paths.");
+            }
 
             if (!Directory.Exists(migrationsPath))
                 throw new DirectoryNotFoundException($"Migrations path not found: {migrationsPath}");
 
-            if (!File.Exists(_configPath))
-                throw new FileNotFoundException($"Config path not found: {_configPath}");
+            // Auto-create config file if it doesn't exist
+            EnsureConfigFileExists(_configPath);
+
+            if (!File.Exists(_migrationLogSchemaPath))
+                throw new FileNotFoundException($"Migration log schema not found: {_migrationLogSchemaPath}");
 
             // Initialize services
             var authProvider = new AzureSqlAuthenticationProvider();
@@ -98,15 +124,69 @@ namespace data_foundry.Services
             _targetServer = targetServer ?? throw new ArgumentNullException(nameof(targetServer));
             _shadowDatabase = $"{_targetDatabase}_Shadow";
             if (migrationsPath == null) throw new ArgumentNullException(nameof(migrationsPath));
-            _configPath = configPath ?? Path.Combine(Path.GetDirectoryName(migrationsPath), Folders.Config, "tablelist.json");
+            
+            // If no config path specified, use extension installation directory with fallback
+            if (string.IsNullOrEmpty(configPath))
+            {
+                var installDir = PathHelper.GetExtensionInstallDirectory(typeof(SqlMigrationOrchestrator));
+                var configDir = PathHelper.SafeCombine(installDir, Folders.Config);
+                
+                if (!string.IsNullOrEmpty(configDir))
+                {
+                    PathHelper.EnsureDirectoryExists(configDir);
+                    _configPath = PathHelper.SafeCombine(configDir, "tablelist.json");
+                }
+                
+                if (string.IsNullOrEmpty(_configPath))
+                {
+                    throw new InvalidOperationException("Failed to determine config path.");
+                }
+            }
+            else
+            {
+                if (!PathHelper.IsValidPath(configPath))
+                {
+                    throw new ArgumentException($"Invalid config path: {configPath}", nameof(configPath));
+                }
+                _configPath = configPath;
+            }
+
             _outputMigrationDir = outputMigrationDir ?? migrationsPath;
-            _migrationLogSchemaPath = migrationLogSchemaPath ?? Path.Combine(Path.GetDirectoryName(migrationsPath), Folders.Config, "MigrationLogTableDefinition.sql");
+            
+            // If no migration log schema path specified, use extension installation directory with fallback
+            if (string.IsNullOrEmpty(migrationLogSchemaPath))
+            {
+                var installDir = PathHelper.GetExtensionInstallDirectory(typeof(SqlMigrationOrchestrator));
+                var configDir = PathHelper.SafeCombine(installDir, Folders.Config);
+                
+                if (!string.IsNullOrEmpty(configDir))
+                {
+                    PathHelper.EnsureDirectoryExists(configDir);
+                    _migrationLogSchemaPath = PathHelper.SafeCombine(configDir, "MigrationLogTableDefinition.sql");
+                }
+                
+                if (string.IsNullOrEmpty(_migrationLogSchemaPath))
+                {
+                    throw new InvalidOperationException("Failed to determine migration log schema path.");
+                }
+            }
+            else
+            {
+                if (!PathHelper.IsValidPath(migrationLogSchemaPath))
+                {
+                    throw new ArgumentException($"Invalid migration log schema path: {migrationLogSchemaPath}", nameof(migrationLogSchemaPath));
+                }
+                _migrationLogSchemaPath = migrationLogSchemaPath;
+            }
 
             if (!Directory.Exists(migrationsPath))
                 throw new DirectoryNotFoundException($"MigrationsPath not found: {migrationsPath}");
 
-            if (!File.Exists(_configPath))
-                throw new FileNotFoundException($"ConfigPath not found: {_configPath}");
+            // Auto-create config file if it doesn't exist
+            EnsureConfigFileExists(_configPath);
+
+            if (!File.Exists(_migrationLogSchemaPath))
+                throw new FileNotFoundException($"Migration log schema not found: {_migrationLogSchemaPath}");
 
             // Initialize services
             var authProvider = new AzureSqlAuthenticationProvider();
@@ -303,6 +383,28 @@ namespace data_foundry.Services
         {
             var json = File.ReadAllText(_configPath);
             return JsonConvert.DeserializeObject<MigrationConfig>(json);
+        }
+
+        private static void EnsureConfigFileExists(string configPath)
+        {
+            if (File.Exists(configPath))
+                return;
+
+            // Create default config with empty tracked tables
+            var defaultConfig = new MigrationConfig
+            {
+                TrackedTables = new List<string>()
+            };
+
+            var json = JsonConvert.SerializeObject(defaultConfig, Formatting.Indented);
+            
+            // Ensure directory exists
+            var directory = PathHelper.GetSafeDirectoryName(configPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                PathHelper.EnsureDirectoryExists(directory);
+                File.WriteAllText(configPath, json);
+            }
         }
     }
 }

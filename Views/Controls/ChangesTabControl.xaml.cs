@@ -1,14 +1,19 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using data_foundry.Models;
+using data_foundry.Services;
+using Microsoft.VisualStudio.Shell;
 
 namespace data_foundry.Views.Controls
 {
     public partial class ChangesTabControl : UserControl
     {
-        private ObservableCollection<DatabaseChange> _allChanges;
+        private ObservableCollection<TableChangeSummary> _allChanges;
+        private bool _isProcessing;
 
         public ChangesTabControl()
         {
@@ -20,57 +25,148 @@ namespace data_foundry.Views.Controls
 
         private void InitializeDummyData()
         {
-            _allChanges = new ObservableCollection<DatabaseChange>
-            {
-                new DatabaseChange { Type = "Table", ObjectName = "Users", Schema = "dbo", ChangeType = "Modified", ModifiedDate = "2025-01-11 14:15:22" },
-                new DatabaseChange { Type = "Stored Procedure", ObjectName = "GetUserById", Schema = "dbo", ChangeType = "Added", ModifiedDate = "2025-01-11 13:45:10" },
-                new DatabaseChange { Type = "Table", ObjectName = "Orders", Schema = "dbo", ChangeType = "Modified", ModifiedDate = "2025-01-11 12:30:05" },
-                new DatabaseChange { Type = "View", ObjectName = "vw_ActiveUsers", Schema = "dbo", ChangeType = "Modified", ModifiedDate = "2025-01-11 11:22:33" },
-                new DatabaseChange { Type = "Function", ObjectName = "fn_CalculateTotal", Schema = "dbo", ChangeType = "Added", ModifiedDate = "2025-01-11 10:15:44" },
-                new DatabaseChange { Type = "Stored Procedure", ObjectName = "UpdateOrderStatus", Schema = "dbo", ChangeType = "Modified", ModifiedDate = "2025-01-11 09:50:12" },
-                new DatabaseChange { Type = "Table", ObjectName = "Products", Schema = "dbo", ChangeType = "Modified", ModifiedDate = "2025-01-11 09:30:00" },
-                new DatabaseChange { Type = "Trigger", ObjectName = "trg_AuditUsers", Schema = "dbo", ChangeType = "Added", ModifiedDate = "2025-01-11 08:45:55" }
-            };
+            // Start with empty data - will be populated on refresh
+            _allChanges = new ObservableCollection<TableChangeSummary>();
             ChangesDataGrid.ItemsSource = _allChanges;
             UpdateChangesCount();
         }
 
-        private void RefreshChangesButton_Click(object sender, RoutedEventArgs e)
+        private async void RefreshChangesButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("Refreshing database changes.\n\nThis will eventually execute PowerShell scripts to detect changes.",
-                "Refresh Changes", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (_isProcessing) return;
+
+            try
+            {
+                _isProcessing = true;
+                RefreshChangesBtn.IsEnabled = false;
+                RefreshChangesBtn.Content = "Detecting Changes...";
+
+                await DetectChangesAsync();
+            }
+            finally
+            {
+                _isProcessing = false;
+                RefreshChangesBtn.IsEnabled = true;
+                RefreshChangesBtn.Content = "Refresh Changes";
+            }
+        }
+
+        private async Task DetectChangesAsync()
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            try
+            {
+                OutputWindowLogger.Clear();
+                OutputWindowLogger.Show();
+                OutputWindowLogger.Log("=== Detecting Database Changes ===");
+
+                var orchestrator = SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
+
+                System.Collections.Generic.List<TableChangeSummary> changes = null;
+
+                await Task.Run(() =>
+                {
+                    changes = orchestrator.DetectAndHandleChanges(
+                        action: null, // Don't auto-act on changes
+                        logger: msg =>
+                        {
+                            ThreadHelper.JoinableTaskFactory.Run(async () =>
+                            {
+                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                                OutputWindowLogger.Log(msg);
+                            });
+                        });
+                });
+
+                OutputWindowLogger.Log("=== Change Detection Complete ===");
+
+                // Update UI on main thread
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                _allChanges.Clear();
+                if (changes != null)
+                {
+                    foreach (var change in changes)
+                    {
+                        _allChanges.Add(change);
+                    }
+                }
+
+                ApplyCurrentFilter();
+                UpdateChangesCount();
+
+                var changesWithDiffs = changes?.Count(c => c.HasChanges) ?? 0;
+                if (changesWithDiffs > 0)
+                {
+                    MessageBox.Show(
+                        $"Found {changesWithDiffs} table(s) with changes.\n\nSee the grid below for details.",
+                        "Changes Detected",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "No changes detected between target and shadow databases.",
+                        "No Changes",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.LogError($"Change detection failed: {ex.Message}");
+                OutputWindowLogger.LogError(ex.StackTrace);
+
+                MessageBox.Show(
+                    $"Change detection failed:\n\n{ex.Message}\n\nCheck the Output window for details.",
+                    "Detection Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
 
         private void ChangeTypeFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (ChangeTypeFilter.SelectedItem == null || ChangesDataGrid == null)
+            ApplyCurrentFilter();
+        }
+
+        private void ApplyCurrentFilter()
+        {
+            if (ChangeTypeFilter?.SelectedItem == null || ChangesDataGrid == null || _allChanges == null)
                 return;
+
             var selectedFilter = ((ComboBoxItem)ChangeTypeFilter.SelectedItem).Content.ToString();
+            
             if (selectedFilter == "All Changes")
             {
                 ChangesDataGrid.ItemsSource = _allChanges;
             }
-            else
+            else if (selectedFilter == "With Changes Only")
             {
-                var filtered = new ObservableCollection<DatabaseChange>();
-                foreach (var change in _allChanges)
-                {
-                    if (change.Type == selectedFilter ||
-                        (selectedFilter == "Stored Procedures" && change.Type == "Stored Procedure"))
-                    {
-                        filtered.Add(change);
-                    }
-                }
+                var filtered = new ObservableCollection<TableChangeSummary>(
+                    _allChanges.Where(c => c.HasChanges));
                 ChangesDataGrid.ItemsSource = filtered;
             }
+            else if (selectedFilter == "No Changes")
+            {
+                var filtered = new ObservableCollection<TableChangeSummary>(
+                    _allChanges.Where(c => !c.HasChanges));
+                ChangesDataGrid.ItemsSource = filtered;
+            }
+
             UpdateChangesCount();
         }
 
         private void UpdateChangesCount()
         {
-            if (ChangesDataGrid.Items != null && ChangesCountText != null)
+            if (ChangesDataGrid?.Items != null && ChangesCountText != null)
             {
-                ChangesCountText.Text = $"Total changes: {ChangesDataGrid.Items.Count}";
+                var totalChanges = _allChanges?.Count(c => c.HasChanges) ?? 0;
+                var displayedCount = ChangesDataGrid.Items.Count;
+                ChangesCountText.Text = $"Showing {displayedCount} table(s) ({totalChanges} with changes)";
             }
         }
     }

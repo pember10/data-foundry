@@ -1,6 +1,9 @@
+using System;
 using System.ComponentModel;
 using System.Drawing.Design;
+using System.Linq;
 using Microsoft.VisualStudio.Shell;
+using static data_foundry.Constants;
 
 namespace data_foundry.Options
 {
@@ -110,6 +113,41 @@ namespace data_foundry.Options
         [Description("Generates a package script during a build.")]
         public bool GeneratePackageScript { get; set; }
 
-        
+        [Category("Change Detection")]
+        [DisplayName("Tracked Tables")]
+        [Description("Comma-separated list of tables to track for data changes (e.g., Users,Orders,Products). Changes to the extension's tablelist.json file.")]
+        [Editor(typeof(System.ComponentModel.Design.MultilineStringEditor), typeof(UITypeEditor))]
+        public string TrackedTables
+        {
+            get
+            {
+                // Read from extension's tablelist.json
+                var config = Config.DataFoundryConfig.LoadTableList();
+                return config.Tables != null ? string.Join(", ", config.Tables) : string.Empty;
+            }
+            set
+            {
+                // Write to extension's tablelist.json
+                var tables = value?.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(t => t.Trim())
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .ToList() ?? new System.Collections.Generic.List<string>();
+
+                var config = new Config.TableListConfig { Tables = tables };
+                
+                var assemblyPath = typeof(Config.TableListConfig).Assembly.Location;
+                var installDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var configPath = System.IO.Path.Combine(installDir, Folders.Config, "tablelist.json");
+
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(config, Newtonsoft.Json.Formatting.Indented);
+                
+                // Ensure directory exists
+                var directory = System.IO.Path.GetDirectoryName(configPath);
+                if (!System.IO.Directory.Exists(directory))
+                    System.IO.Directory.CreateDirectory(directory);
+
+                System.IO.File.WriteAllText(configPath, json);
+            }
+        }
     }
 }

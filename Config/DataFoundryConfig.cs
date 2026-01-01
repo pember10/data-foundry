@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using data_foundry.Helpers;
+using static data_foundry.Constants;
 
 namespace data_foundry.Config
 {
@@ -12,16 +14,29 @@ namespace data_foundry.Config
     {
         public static TableListConfig LoadTableList()
         {
-            // Get the extension's install directory
-            var assemblyPath = typeof(TableListConfig).Assembly.Location;
-            var installDir = Path.GetDirectoryName(assemblyPath);
-            var configPath = Path.Combine(installDir, "tablelist.json");
+            try
+            {
+                // Get the extension's install directory
+                var installDir = PathHelper.GetExtensionInstallDirectory(typeof(TableListConfig));
+                var configDir = PathHelper.SafeCombine(installDir, Folders.Config);
+                
+                if (string.IsNullOrEmpty(configDir))
+                {
+                    return new TableListConfig { Tables = new List<string>() };
+                }
 
-            if (!File.Exists(configPath))
+                var configPath = PathHelper.SafeCombine(configDir, "tablelist.json");
+                
+                if (string.IsNullOrEmpty(configPath) || !File.Exists(configPath))
+                    return new TableListConfig { Tables = new List<string>() };
+
+                var json = File.ReadAllText(configPath);
+                return JsonConvert.DeserializeObject<TableListConfig>(json);
+            }
+            catch
+            {
                 return new TableListConfig { Tables = new List<string>() };
-
-            var json = File.ReadAllText(configPath);
-            return JsonConvert.DeserializeObject<TableListConfig>(json);
+            }
         }
     }
 }

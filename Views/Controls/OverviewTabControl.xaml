@@ -22,13 +22,13 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     
-					<TextBlock Grid.Row="0" Grid.Column="0" Text="Target Project Name:" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Target Project Name:" FontWeight="SemiBold" Margin="0,0,0,8"/>
                     <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TargetProjectNameText" Text="Api.Db" Margin="0,0,0,8"/>
                     
-					<TextBlock Grid.Row="1" Grid.Column="0" Text="Source Database:" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Source Database:" FontWeight="SemiBold" Margin="0,0,0,8"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SourceDatabaseConnectionText" Text="[(LOCALDB)\CORE].[Core.Db]" Margin="0,0,0,8"/>
-					
-					<TextBlock Grid.Row="3" Grid.Column="0" Text="Last Deployment:" FontWeight="SemiBold"/>
+                    
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Last Deployment:" FontWeight="SemiBold"/>
                     <TextBlock Grid.Row="3" Grid.Column="1" x:Name="LastDeploymentText" Text="2025-01-11 14:23:45"/>
                 </Grid>
             </Border>

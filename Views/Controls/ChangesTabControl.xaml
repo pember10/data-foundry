@@ -16,15 +16,12 @@
         <!-- Filter/Toolbar -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
             <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
-            <ComboBox x:Name="ChangeTypeFilter" Width="150" Margin="0,0,16,0">
+            <ComboBox x:Name="ChangeTypeFilter" Width="180" Margin="0,0,16,0">
                 <ComboBoxItem Content="All Changes" IsSelected="True"/>
-                <ComboBoxItem Content="Tables"/>
-                <ComboBoxItem Content="Views"/>
-                <ComboBoxItem Content="Stored Procedures"/>
-                <ComboBoxItem Content="Functions"/>
-                <ComboBoxItem Content="Triggers"/>
+                <ComboBoxItem Content="With Changes Only"/>
+                <ComboBoxItem Content="No Changes"/>
             </ComboBox>
-            <Button Content="Refresh" Style="{DynamicResource SecondaryButtonStyle}" x:Name="RefreshChangesBtn"/>
+            <Button Content="Refresh Changes" Style="{DynamicResource SecondaryButtonStyle}" x:Name="RefreshChangesBtn"/>
         </StackPanel>
         <!-- Changes List -->
         <Border Grid.Row="2" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4">
@@ -32,11 +29,11 @@
                       HeadersVisibility="Column" GridLinesVisibility="Horizontal" 
                       BorderThickness="0" RowHeight="32">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="120"/>
-                    <DataGridTextColumn Header="Object Name" Binding="{Binding ObjectName}" Width="200"/>
-                    <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="100"/>
-                    <DataGridTextColumn Header="Change Type" Binding="{Binding ChangeType}" Width="120"/>
-                    <DataGridTextColumn Header="Modified Date" Binding="{Binding ModifiedDate}" Width="150"/>
+                    <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="200"/>
+                    <DataGridTextColumn Header="Inserts" Binding="{Binding Inserts}" Width="100"/>
+                    <DataGridTextColumn Header="Updates" Binding="{Binding Updates}" Width="100"/>
+                    <DataGridTextColumn Header="Deletes" Binding="{Binding Deletes}" Width="100"/>
+                    <DataGridCheckBoxColumn Header="Has Changes" Binding="{Binding HasChanges}" Width="120" IsReadOnly="True"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
