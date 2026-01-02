@@ -176,21 +176,65 @@ namespace data_foundry.Services
             if (result.Rows.Count > 0 && Convert.ToInt32(result.Rows[0]["exists_flag"]) == 0)
             {
                 var ddl = File.ReadAllText(schemaScriptPath);
-                ExecuteNonQuery(database, ddl);
+                ExecuteSqlScript(database, ddl);
+            }
+        }
+
+        /// <summary>
+        /// Executes a SQL script that may contain GO batch separators.
+        /// </summary>
+        public void ExecuteSqlScript(string database, string script)
+        {
+            // Split the script by GO statements (case-insensitive, standalone on a line)
+            var batches = System.Text.RegularExpressions.Regex.Split(
+                script,
+                @"^\s*GO\s*$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Multiline
+            );
+
+            foreach (var batch in batches)
+            {
+                var trimmedBatch = batch.Trim();
+                
+                // Skip empty batches
+                if (string.IsNullOrWhiteSpace(trimmedBatch))
+                    continue;
+
+                ExecuteNonQuery(database, trimmedBatch);
             }
         }
 
         /// <summary>
         /// Gets all executed migration IDs from the migration log.
+        /// Returns empty list if the migration log table doesn't exist yet.
         /// </summary>
         public List<Guid> GetExecutedMigrationIds(string database)
         {
-            var query = "SELECT migration_id FROM dbo.__MigrationLog";
-            var result = ExecuteQuery(database, query);
-            
-            return result.AsEnumerable()
-                .Select(row => Guid.Parse(row["migration_id"].ToString()))
-                .ToList();
+            try
+            {
+                // First check if the migration log table exists
+                var checkTableQuery = "SELECT CASE WHEN OBJECT_ID('[dbo].[__MigrationLog]') IS NULL THEN 0 ELSE 1 END AS exists_flag;";
+                var tableCheckResult = ExecuteQuery(database, checkTableQuery);
+                
+                if (tableCheckResult.Rows.Count == 0 || Convert.ToInt32(tableCheckResult.Rows[0]["exists_flag"]) == 0)
+                {
+                    // Table doesn't exist yet - return empty list (all migrations are pending)
+                    return new List<Guid>();
+                }
+                
+                // Table exists - get executed migrations
+                var query = "SELECT migration_id FROM dbo.__MigrationLog";
+                var result = ExecuteQuery(database, query);
+                
+                return result.AsEnumerable()
+                    .Select(row => Guid.Parse(row["migration_id"].ToString()))
+                    .ToList();
+            }
+            catch (SqlException ex) when (ex.Number == 208) // Invalid object name
+            {
+                // Table doesn't exist - return empty list
+                return new List<Guid>();
+            }
         }
 
         /// <summary>
@@ -244,16 +288,20 @@ ORDER BY ic.key_ordinal;";
         /// </summary>
         public List<string> GetNonPrimaryColumns(string database, string table, List<string> primaryKeys)
         {
-            var objectIdQuery = "SELECT OBJECT_ID(@TableName) AS oid";
-            var oidResult = ExecuteQuery(database, objectIdQuery, new SqlParameter("@TableName", table));
-            var objectId = oidResult.Rows[0]["oid"].ToString();
+            // Optimized: Get columns in a single query using NOT IN
+            var pkList = string.Join("','", primaryKeys.Select(pk => pk.Replace("'", "''")));
+            
+            var query = $@"
+SELECT name 
+FROM sys.columns 
+WHERE OBJECT_ID = OBJECT_ID(@TableName) 
+  AND name NOT IN ('{pkList}')
+ORDER BY column_id";
 
-            var query = "SELECT name FROM sys.columns WHERE OBJECT_ID=@ObjectId";
-            var result = ExecuteQuery(database, query, new SqlParameter("@ObjectId", objectId));
+            var result = ExecuteQuery(database, query, new SqlParameter("@TableName", table));
 
             return result.AsEnumerable()
                 .Select(row => row["name"].ToString())
-                .Where(col => !primaryKeys.Contains(col))
                 .ToList();
         }
 

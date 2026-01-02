@@ -1,7 +1,6 @@
 using System;
-using System.Linq;
-using System.Windows.Controls;
 using System.Windows;
+using System.Windows.Controls;
 using data_foundry.Views.Controls;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell;
@@ -11,22 +10,23 @@ namespace data_foundry
 {
     public partial class DataFoundryToolWindowControl : UserControl
     {
-        private DTE _dte;
+        private DTE _environment;
         private SolutionEvents _solutionEvents;
 
         public DataFoundryToolWindowControl()
         {
             InitializeComponent();
-            
+
             // Defer initialization to avoid blocking the constructor
             Loaded += OnLoaded;
         }
 
+        // Change the event handler signature to match RoutedEventHandler (void return type)
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
             // Only initialize once
             Loaded -= OnLoaded;
-            
+
             try
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -38,9 +38,9 @@ namespace data_foundry
                 // Log the exception - async void methods can crash the process if unhandled
                 System.Diagnostics.Debug.WriteLine($"Error initializing DataFoundry tool window: {ex}");
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                MessageBox.Show($"Failed to initialize Data Foundry: {ex.Message}", 
-                    "Initialization Error", 
-                    MessageBoxButton.OK, 
+                _ = MessageBox.Show($"Failed to initialize Data Foundry: {ex.Message}",
+                    "Initialization Error",
+                    MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
         }
@@ -48,14 +48,32 @@ namespace data_foundry
         private void InitializeDteEvents()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            _dte = Package.GetGlobalService(typeof(DTE)) as DTE;
-            if (_dte != null && _dte.Events != null)
+            _environment = Package.GetGlobalService(typeof(DTE)) as DTE;
+            if (_environment != null && _environment.Events != null)
             {
-                _solutionEvents = _dte.Events.SolutionEvents;
-                _solutionEvents.Opened += SolutionOrProjectChanged_NoArgs;
+                _solutionEvents = _environment.Events.SolutionEvents;
+                _solutionEvents.Opened += OnSolutionOpened;
                 _solutionEvents.AfterClosing += SolutionOrProjectChanged_NoArgs;
                 _solutionEvents.ProjectAdded += SolutionOrProjectChanged_Project;
                 _solutionEvents.ProjectRemoved += SolutionOrProjectChanged_Project;
+            }
+        }
+
+        private void OnSolutionOpened()
+        {
+            // Update UI first
+            _ = UpdateContentAsync();
+
+            // Check if auto-refresh is enabled
+            data_foundryPackage package = data_foundryPackage.Instance;
+            if (package != null)
+            {
+                Options.DataFoundryOptions options = (Options.DataFoundryOptions)package.GetDialogPage(typeof(Options.DataFoundryOptions));
+                if (options.AutoRefresh)
+                {
+                    // Trigger auto-refresh on background thread
+                    _ = TriggerAutoRefreshAsync();
+                }
             }
         }
 
@@ -80,24 +98,19 @@ namespace data_foundry
         private void UpdateContent()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            
-            if (HasSqlProjectInSolution())
-            {
-                MainContent.Content = new TabbedContentControl();
-            }
-            else
-            {
-                MainContent.Content = new NoSqlProjectMessageControl();
-            }
+
+            MainContent.Content = HasSqlProjectInSolution() ? new TabbedContentControl() : (object)new NoSqlProjectMessageControl();
         }
 
         private bool HasSqlProjectInSolution()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            if (_dte?.Solution == null || _dte.Solution.Projects == null)
+            if (_environment?.Solution == null || _environment.Solution.Projects == null)
+            {
                 return false;
+            }
 
-            foreach (Project project in _dte.Solution.Projects)
+            foreach (Project project in _environment.Solution.Projects)
             {
                 try
                 {
@@ -119,33 +132,45 @@ namespace data_foundry
             }
             return false;
         }
-    }
 
-    // Helper control to host the tabbed UI
-    public class TabbedContentControl : ContentControl
-    {
-        public TabbedContentControl()
+        private async Task TriggerAutoRefreshAsync()
         {
-            Content = new Grid
+            try
             {
-                Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#F3F3F3"),
-                Children =
+                // Wait a bit for solution to fully load
+                await Task.Delay(2000);
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                Services.OutputWindowLogger.Clear();
+                Services.OutputWindowLogger.Show();
+                Services.OutputWindowLogger.Log("=== Auto-Refresh: Detecting Database Changes ===");
+
+                // Create orchestrator on UI thread
+                Services.SqlMigrationOrchestrator orchestrator = Services.SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
+
+                // Now run detection on background thread
+                await Task.Run(() =>
                 {
-                    new TabControl
-                    {
-                        Margin = new Thickness(0),
-                        BorderThickness = new Thickness(0),
-                        Background = System.Windows.Media.Brushes.White,
-                        Items =
+                    _ = orchestrator.DetectAndHandleChanges(
+                        action: null,
+                        logger: msg =>
                         {
-                            new TabItem { Header = "Overview", Content = new OverviewTabControl() },
-                            new TabItem { Header = "Changes", Content = new ChangesTabControl() },
-                            new TabItem { Header = "Deployment", Content = new DeploymentTabControl() }
-                            // SettingsTabControl intentionally not referenced
-                        }
-                    }
-                }
-            };
+                            ThreadHelper.JoinableTaskFactory.Run(async () =>
+                            {
+                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                                Services.OutputWindowLogger.Log(msg);
+                            });
+                        });
+                });
+
+                Services.OutputWindowLogger.Log("=== Auto-Refresh Complete ===");
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                Services.OutputWindowLogger.LogError($"Auto-refresh failed: {ex.Message}");
+            }
         }
     }
 }

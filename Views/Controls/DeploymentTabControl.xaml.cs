@@ -10,18 +10,62 @@ namespace data_foundry.Views.Controls
 {
     public partial class DeploymentTabControl : UserControl
     {
-        private bool _isProcessing;
-
         public DeploymentTabControl()
         {
             InitializeComponent();
             DeployChangesButton.Click += DeployChangesButton_Click;
+            CancelButton.Click += CancelButton_Click;
+            
+            // Subscribe to global processing state changes
+            GlobalProcessingStateService.Instance.ProcessingStateChanged += OnProcessingStateChanged;
+            
+            // Initialize button states
+            UpdateButtonStates();
+        }
+
+        private void CancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            GlobalProcessingStateService.Instance.CancelOperation();
+        }
+
+        private void OnProcessingStateChanged(object sender, ProcessingStateChangedEventArgs e)
+        {
+            ThreadHelper.JoinableTaskFactory.Run(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                UpdateButtonStates();
+                
+                if (e.IsProcessing)
+                {
+                    ShowProcessingState(e.CurrentOperation);
+                }
+                else if (e.CompletionStatus.HasValue)
+                {
+                    // Show completion state
+                    switch (e.CompletionStatus.Value)
+                    {
+                        case ProcessingCompletionStatus.Success:
+                            ShowSuccessState(e.CompletionMessage ?? "Deployment completed successfully!");
+                            break;
+                        case ProcessingCompletionStatus.Error:
+                            ShowErrorState(e.CompletionMessage ?? "Deployment failed");
+                            break;
+                        case ProcessingCompletionStatus.Cancelled:
+                            ShowReadyState();
+                            break;
+                    }
+                }
+            });
+        }
+
+        private void UpdateButtonStates()
+        {
+            var isProcessing = GlobalProcessingStateService.Instance.IsProcessing;
+            SetControlsEnabled(!isProcessing);
         }
 
         private async void DeployChangesButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_isProcessing) return;
-
             var server = DeployServerTextBox.Text;
             var database = DeployDatabaseTextBox.Text;
             var createBackup = BackupCheckBox.IsChecked.GetValueOrDefault();
@@ -48,19 +92,21 @@ namespace data_foundry.Views.Controls
             if (confirmResult != MessageBoxResult.Yes)
                 return;
 
+            if (!GlobalProcessingStateService.Instance.TryStartProcessing("Deploying changes..."))
+            {
+                MessageBox.Show("Another operation is currently in progress. Please wait for it to complete.", 
+                    "Operation In Progress", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             try
             {
-                _isProcessing = true;
-                DeployChangesButton.IsEnabled = false;
-                DeployChangesButton.Content = "Deploying...";
-
                 await ExecuteDeploymentAsync(server, database, createBackup);
+                GlobalProcessingStateService.Instance.CompleteProcessing(ProcessingCompletionStatus.Success, "Deployment completed successfully!");
             }
-            finally
+            catch
             {
-                _isProcessing = false;
-                DeployChangesButton.IsEnabled = true;
-                DeployChangesButton.Content = "Deploy Changes";
+                GlobalProcessingStateService.Instance.CompleteProcessing(ProcessingCompletionStatus.Error, "Deployment failed");
             }
         }
 
@@ -111,6 +157,9 @@ namespace data_foundry.Views.Controls
                 AppendLog("=== Deployment Complete ===");
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                ShowSuccessState("Deployment completed successfully!");
+                
                 MessageBox.Show(
                     "Deployment completed successfully!\n\nCheck the deployment log for details.",
                     "Deployment Complete",
@@ -120,6 +169,9 @@ namespace data_foundry.Views.Controls
             catch (Exception ex)
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                ShowErrorState("Deployment failed");
+                
                 AppendLog($"ERROR: {ex.Message}");
                 AppendLog(ex.StackTrace);
                 
@@ -139,6 +191,82 @@ namespace data_foundry.Views.Controls
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
             DeploymentLogTextBox.AppendText($"[{timestamp}] {message}\n");
             DeploymentLogTextBox.ScrollToEnd();
+        }
+
+        private void SetControlsEnabled(bool enabled)
+        {
+            DeployChangesButton.IsEnabled = enabled;
+            DeployServerTextBox.IsEnabled = enabled;
+            DeployDatabaseTextBox.IsEnabled = enabled;
+            AuthenticationComboBox.IsEnabled = enabled;
+            BackupCheckBox.IsEnabled = enabled;
+            GenerateScriptCheckBox.IsEnabled = enabled;
+            TransactionCheckBox.IsEnabled = enabled;
+            DropObjectsCheckBox.IsEnabled = enabled;
+            IgnoreExtendedPropsCheckBox.IsEnabled = enabled;
+        }
+
+        private void ShowReadyState()
+        {
+            ReadyIcon.Visibility = Visibility.Visible;
+            ProcessingIcon.Visibility = Visibility.Collapsed;
+            SuccessIcon.Visibility = Visibility.Collapsed;
+            ErrorIcon.Visibility = Visibility.Collapsed;
+            CancelButton.Visibility = Visibility.Collapsed;
+            
+            LoadingStatusText.Text = "Ready to deploy...";
+            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#666666"));
+        }
+
+        private void ShowProcessingState(string message)
+        {
+            ReadyIcon.Visibility = Visibility.Collapsed;
+            ProcessingIcon.Visibility = Visibility.Visible;
+            SuccessIcon.Visibility = Visibility.Collapsed;
+            ErrorIcon.Visibility = Visibility.Collapsed;
+            CancelButton.Visibility = Visibility.Visible;
+            
+            LoadingStatusText.Text = message;
+            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2196F3"));
+        }
+
+        private void ShowSuccessState(string message = "Deployment completed successfully!")
+        {
+            ReadyIcon.Visibility = Visibility.Collapsed;
+            ProcessingIcon.Visibility = Visibility.Collapsed;
+            SuccessIcon.Visibility = Visibility.Visible;
+            ErrorIcon.Visibility = Visibility.Collapsed;
+            CancelButton.Visibility = Visibility.Collapsed;
+            
+            LoadingStatusText.Text = message;
+            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#4CAF50"));
+        }
+
+        private void ShowErrorState(string message = "Deployment failed")
+        {
+            ReadyIcon.Visibility = Visibility.Collapsed;
+            ProcessingIcon.Visibility = Visibility.Collapsed;
+            SuccessIcon.Visibility = Visibility.Collapsed;
+            ErrorIcon.Visibility = Visibility.Visible;
+            CancelButton.Visibility = Visibility.Collapsed;
+            
+            LoadingStatusText.Text = message;
+            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#F44336"));
+        }
+
+        private void ShowLoadingIndicator(string message)
+        {
+            ShowProcessingState(message);
+        }
+
+        private void HideLoadingIndicator()
+        {
+            // Don't hide - success/error state will persist
+            // ShowReadyState() is now only called when starting a new operation
         }
     }
 }

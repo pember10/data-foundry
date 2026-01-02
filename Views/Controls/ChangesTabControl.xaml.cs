@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using data_foundry.Models;
 using data_foundry.Services;
 using Microsoft.VisualStudio.Shell;
@@ -13,14 +16,114 @@ namespace data_foundry.Views.Controls
     public partial class ChangesTabControl : UserControl
     {
         private ObservableCollection<TableChangeSummary> _allChanges;
-        private bool _isProcessing;
 
         public ChangesTabControl()
         {
             InitializeComponent();
             InitializeDummyData();
             RefreshChangesBtn.Click += RefreshChangesButton_Click;
+            GenerateScriptBtn.Click += GenerateScriptButton_Click;
             ChangeTypeFilter.SelectionChanged += ChangeTypeFilter_SelectionChanged;
+            CancelButton.Click += CancelButton_Click;
+            ApplyPendingMigrationsBtn.Click += ApplyPendingMigrationsButton_Click;
+            
+            // Subscribe to global processing state changes
+            GlobalProcessingStateService.Instance.ProcessingStateChanged += OnProcessingStateChanged;
+            
+            // Subscribe to shared results updates
+            ChangeDetectionResultsService.Instance.ResultsUpdated += OnResultsUpdated;
+            
+            // Subscribe to database sync status changes
+            DatabaseSyncStatusService.Instance.SyncStatusChanged += OnDatabaseSyncStatusChanged;
+            
+            // Initialize button states
+            UpdateButtonStates();
+            
+            // Load any existing results
+            var existingResults = ChangeDetectionResultsService.Instance.LatestResults;
+            if (existingResults != null)
+            {
+                UpdateGridWithResults(existingResults);
+            }
+            
+            // Check sync status on load
+            _ = CheckSyncStatusAsync();
+        }
+
+        private async void OnResultsUpdated(object sender, List<TableChangeSummary> results)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            if (results != null)
+            {
+                UpdateGridWithResults(results);
+            }
+        }
+
+        private void UpdateGridWithResults(List<TableChangeSummary> results)
+        {
+            _allChanges.Clear();
+            foreach (var change in results)
+            {
+                _allChanges.Add(change);
+            }
+            
+            ApplyCurrentFilter();
+            UpdateChangesCount();
+        }
+
+        private void CancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            GlobalProcessingStateService.Instance.CancelOperation();
+        }
+
+        private async void OnProcessingStateChanged(object sender, ProcessingStateChangedEventArgs e)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            UpdateButtonStates();
+            
+            if (e.IsProcessing)
+            {
+                ShowProcessingState(e.CurrentOperation);
+            }
+            else if (e.CompletionStatus.HasValue)
+            {
+                // Show completion state
+                switch (e.CompletionStatus.Value)
+                {
+                    case ProcessingCompletionStatus.Success:
+                        ShowSuccessState(e.CompletionMessage ?? "Completed successfully!");
+                        break;
+                    case ProcessingCompletionStatus.Error:
+                        ShowErrorState(e.CompletionMessage ?? "Operation failed");
+                        break;
+                    case ProcessingCompletionStatus.Cancelled:
+                        ShowReadyState();
+                        break;
+                }
+            }
+        }
+
+        private async void OnDatabaseSyncStatusChanged(object sender, EventArgs e)
+        {
+            // Re-check sync status when notified of changes
+            // Use try-catch to handle any threading or timing issues
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                await CheckSyncStatusAsync();
+            }
+            catch (Exception ex)
+            {
+                // Log but don't crash
+                System.Diagnostics.Debug.WriteLine($"Error updating sync status: {ex.Message}");
+            }
+        }
+
+        private void UpdateButtonStates()
+        {
+            var isProcessing = GlobalProcessingStateService.Instance.IsProcessing;
+            SetButtonsEnabled(!isProcessing);
         }
 
         private void InitializeDummyData()
@@ -33,21 +136,225 @@ namespace data_foundry.Views.Controls
 
         private async void RefreshChangesButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_isProcessing) return;
+            // First check if local DB is in sync
+            var syncStatus = await CheckSyncStatusAsync();
+            if (!syncStatus.IsInSync)
+            {
+                // No message box - sync status panel is already visible with warning
+                return;
+            }
+            
+            if (!GlobalProcessingStateService.Instance.TryStartProcessing("Detecting changes..."))
+            {
+                // No message box - status indicator will show processing state
+                return;
+            }
 
             try
             {
-                _isProcessing = true;
-                RefreshChangesBtn.IsEnabled = false;
-                RefreshChangesBtn.Content = "Detecting Changes...";
-
                 await DetectChangesAsync();
+                
+                // Success - determine message based on results
+                var changesWithDiffs = _allChanges?.Count(c => c.HasChanges) ?? 0;
+                var message = changesWithDiffs > 0 
+                    ? $"Found {changesWithDiffs} table(s) with changes"
+                    : "No changes detected";
+                    
+                GlobalProcessingStateService.Instance.CompleteProcessing(ProcessingCompletionStatus.Success, message);
+            }
+            catch
+            {
+                GlobalProcessingStateService.Instance.CompleteProcessing(ProcessingCompletionStatus.Error, "Change detection failed");
+            }
+        }
+
+        private async void ApplyPendingMigrationsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var syncStatus = await CheckSyncStatusAsync();
+            if (syncStatus.IsInSync)
+            {
+                // Already in sync - just return, status will show it
+                return;
+            }
+            
+            var confirmResult = MessageBox.Show(
+                $"Apply {syncStatus.PendingCount} pending migration(s) to your local database?\n\n" +
+                "This will execute all pending migration scripts in order.\n\n" +
+                "Do you want to continue?",
+                "Confirm Apply Migrations",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirmResult != MessageBoxResult.Yes)
+                return;
+
+            if (!GlobalProcessingStateService.Instance.TryStartProcessing("Applying pending migrations..."))
+            {
+                // No message box - status indicator will show processing state
+                return;
+            }
+
+            try
+            {
+                await ApplyPendingMigrationsAsync(syncStatus.PendingMigrations);
+                
+                // Re-check sync status
+                await CheckSyncStatusAsync();
+            }
+            catch (Exception ex)
+            {
+                GlobalProcessingStateService.Instance.CompleteProcessing(ProcessingCompletionStatus.Error, 
+                    "Failed to apply migrations");
+                
+                // Log error but don't show message box - error icon and status text are visible
+                OutputWindowLogger.LogError($"Failed to apply migrations: {ex.Message}");
+            }
+        }
+
+        private async Task<SyncStatus> CheckSyncStatusAsync()
+        {
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                // Show loading state while checking
+                FilterToolbarPanel.Visibility = Visibility.Collapsed;
+                SyncStatusPanel.Visibility = Visibility.Collapsed;
+                ShowProcessingState("Checking for pending migrations...");
+                
+                var orchestrator = SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
+                List<MigrationInfo> pendingMigrations = null;
+                
+                await Task.Run(() =>
+                {
+                    pendingMigrations = orchestrator.GetPendingMigrationsForTarget();
+                });
+                
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                var isInSync = pendingMigrations == null || pendingMigrations.Count == 0;
+                
+                if (isInSync)
+                {
+                    SyncStatusPanel.Visibility = Visibility.Collapsed;
+                    FilterToolbarPanel.Visibility = Visibility.Visible;
+                    ShowReadyState();
+                }
+                else
+                {
+                    SyncStatusPanel.Visibility = Visibility.Visible;
+                    FilterToolbarPanel.Visibility = Visibility.Collapsed;
+                    SyncStatusText.Text = $"{pendingMigrations.Count} pending migration{(pendingMigrations.Count > 1 ? "s" : "")}";
+                    ShowReadyState();
+                }
+                
+                return new SyncStatus
+                {
+                    IsInSync = isInSync,
+                    PendingCount = pendingMigrations?.Count ?? 0,
+                    PendingMigrations = pendingMigrations ?? new List<MigrationInfo>()
+                };
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.LogError($"Failed to check sync status: {ex.Message}");
+                
+                // Show ready state on error and assume in sync (show toolbar)
+                ShowReadyState();
+                FilterToolbarPanel.Visibility = Visibility.Visible;
+                SyncStatusPanel.Visibility = Visibility.Collapsed;
+                
+                return new SyncStatus { IsInSync = true, PendingCount = 0, PendingMigrations = new List<MigrationInfo>() };
+            }
+        }
+
+        private async Task ApplyPendingMigrationsAsync(List<MigrationInfo> pendingMigrations)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            try
+            {
+                OutputWindowLogger.Clear();
+                OutputWindowLogger.Show();
+                OutputWindowLogger.Log("=== Applying Pending Migrations ===");
+                OutputWindowLogger.Log($"Applying {pendingMigrations.Count} migration(s) to local database...");
+
+                var orchestrator = SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
+
+                await Task.Run(() =>
+                {
+                    orchestrator.ExecuteTargetMigrations(
+                        requireConfirmation: false,
+                        logger: msg =>
+                        {
+                            ThreadHelper.JoinableTaskFactory.Run(async () =>
+                            {
+                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                                OutputWindowLogger.Log(msg);
+                            });
+                        });
+                });
+
+                OutputWindowLogger.Log("=== Migrations Applied Successfully ===");
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                // Notify all tabs that sync status has changed
+                DatabaseSyncStatusService.Instance.NotifySyncStatusChanged();
+                
+                // No success message box - status indicator shows success
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.LogError($"Failed to apply migrations: {ex.Message}");
+                OutputWindowLogger.LogError(ex.StackTrace);
+                throw;
+            }
+        }
+
+        private class SyncStatus
+        {
+            public bool IsInSync { get; set; }
+            public int PendingCount { get; set; }
+            public List<MigrationInfo> PendingMigrations { get; set; }
+        }
+
+        private async void GenerateScriptButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Check if there are any changes
+            var changesWithDiffs = _allChanges?.Where(c => c.HasChanges).ToList();
+            if (changesWithDiffs == null || changesWithDiffs.Count == 0)
+            {
+                // No message box - status already shows "No changes detected"
+                return;
+            }
+
+            // Confirm generation - keep this message box as requested
+            var confirmResult = MessageBox.Show(
+                $"Generate migration script for {changesWithDiffs.Count} table(s) with changes?\n\n" +
+                string.Join("\n", changesWithDiffs.Select(c => $"• {c.Table}")),
+                "Confirm Script Generation",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirmResult != MessageBoxResult.Yes)
+                return;
+
+            if (!GlobalProcessingStateService.Instance.TryStartProcessing("Generating migration script..."))
+            {
+                // No message box - status indicator will show processing state
+                return;
+            }
+
+            try
+            {
+                await GenerateMigrationScriptAsync(changesWithDiffs);
             }
             finally
             {
-                _isProcessing = false;
-                RefreshChangesBtn.IsEnabled = true;
-                RefreshChangesBtn.Content = "Refresh Changes";
+                GlobalProcessingStateService.Instance.CompleteProcessing();
             }
         }
 
@@ -63,7 +370,7 @@ namespace data_foundry.Views.Controls
 
                 var orchestrator = SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
 
-                System.Collections.Generic.List<TableChangeSummary> changes = null;
+                var changes = (List<TableChangeSummary>)null;
 
                 await Task.Run(() =>
                 {
@@ -75,6 +382,12 @@ namespace data_foundry.Views.Controls
                             {
                                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                                 OutputWindowLogger.Log(msg);
+                                
+                                // Update loading indicator with current step
+                                if (LoadingStatusText != null && LoadingIndicator.Visibility == Visibility.Visible)
+                                {
+                                    LoadingStatusText.Text = msg;
+                                }
                             });
                         });
                 });
@@ -91,6 +404,9 @@ namespace data_foundry.Views.Controls
                     {
                         _allChanges.Add(change);
                     }
+                    
+                    // Update shared service
+                    ChangeDetectionResultsService.Instance.UpdateResults(changes);
                 }
 
                 ApplyCurrentFilter();
@@ -99,33 +415,87 @@ namespace data_foundry.Views.Controls
                 var changesWithDiffs = changes?.Count(c => c.HasChanges) ?? 0;
                 if (changesWithDiffs > 0)
                 {
-                    MessageBox.Show(
-                        $"Found {changesWithDiffs} table(s) with changes.\n\nSee the grid below for details.",
-                        "Changes Detected",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    ShowSuccessState($"Found {changesWithDiffs} table(s) with changes");
+                    // No message box - grid shows details, status shows count
                 }
                 else
                 {
-                    MessageBox.Show(
-                        "No changes detected between target and shadow databases.",
-                        "No Changes",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    ShowSuccessState("No changes detected");
+                    // No message box - status indicator shows result
                 }
             }
             catch (Exception ex)
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                ShowErrorState("Change detection failed");
+                
                 OutputWindowLogger.LogError($"Change detection failed: {ex.Message}");
                 OutputWindowLogger.LogError(ex.StackTrace);
 
-                MessageBox.Show(
-                    $"Change detection failed:\n\n{ex.Message}\n\nCheck the Output window for details.",
-                    "Detection Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                // No message box - error icon and status text are visible
+                // Output window has full details
+                
+                throw; // Re-throw to be caught by outer try-catch
             }
+        }
+
+        private async Task GenerateMigrationScriptAsync(System.Collections.Generic.List<TableChangeSummary> changesWithDiffs)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            try
+            {
+                OutputWindowLogger.Clear();
+                OutputWindowLogger.Show();
+                OutputWindowLogger.Log("=== Generating Migration Script ===");
+
+                // Create orchestrator on UI thread
+                var orchestrator = SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
+                
+                // Generate script name with custom format: 001_US000000_1_202501011123.sql
+                var scriptName = GenerateScriptFileName();
+                
+                OutputWindowLogger.Log($"Script name: {scriptName}");
+                
+                // Get table names
+                var tableNames = changesWithDiffs.Select(c => c.Table).ToList();
+                
+                string scriptFilePath = null;
+
+                // Now run generation on background thread
+                await Task.Run(() =>
+                {
+                    scriptFilePath = orchestrator.GenerateMigrationScriptWithName(tableNames, scriptName);
+                });
+
+                OutputWindowLogger.Log($"Migration script generated: {scriptFilePath}");
+                OutputWindowLogger.Log("=== Script Generation Complete ===");
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                // Show success in status indicator
+                ShowSuccessState($"Generated {System.IO.Path.GetFileName(scriptFilePath)}");
+                
+                // No message box - success status and output window show details
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.LogError($"Script generation failed: {ex.Message}");
+                OutputWindowLogger.LogError(ex.StackTrace);
+
+                ShowErrorState("Script generation failed");
+                
+                // No message box - error icon and output window show details
+            }
+        }
+
+        private string GenerateScriptFileName()
+        {            
+            // Format: 001_US000000_1_202501011123.sql (always 001)
+            var timestamp = DateTime.Now.ToString("yyyyMMddHHmm");
+            return $"001_US000000_1_{timestamp}";
         }
 
         private void ChangeTypeFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -168,6 +538,76 @@ namespace data_foundry.Views.Controls
                 var displayedCount = ChangesDataGrid.Items.Count;
                 ChangesCountText.Text = $"Showing {displayedCount} table(s) ({totalChanges} with changes)";
             }
+        }
+
+        private void SetButtonsEnabled(bool enabled)
+        {
+            RefreshChangesBtn.IsEnabled = enabled;
+            GenerateScriptBtn.IsEnabled = enabled;
+            ChangeTypeFilter.IsEnabled = enabled;
+        }
+
+        private void ShowReadyState()
+        {
+            ReadyIcon.Visibility = Visibility.Visible;
+            ProcessingIcon.Visibility = Visibility.Collapsed;
+            SuccessIcon.Visibility = Visibility.Collapsed;
+            ErrorIcon.Visibility = Visibility.Collapsed;
+            CancelButton.Visibility = Visibility.Collapsed;
+            
+            LoadingStatusText.Text = "Ready to detect changes...";
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#666666"));
+        }
+
+        private void ShowProcessingState(string message)
+        {
+            ReadyIcon.Visibility = Visibility.Collapsed;
+            ProcessingIcon.Visibility = Visibility.Visible;
+            SuccessIcon.Visibility = Visibility.Collapsed;
+            ErrorIcon.Visibility = Visibility.Collapsed;
+            CancelButton.Visibility = Visibility.Visible;
+            
+            LoadingStatusText.Text = message;
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#2196F3"));
+        }
+
+        private void ShowSuccessState(string message = "Completed successfully!")
+        {
+            ReadyIcon.Visibility = Visibility.Collapsed;
+            ProcessingIcon.Visibility = Visibility.Collapsed;
+            SuccessIcon.Visibility = Visibility.Visible;
+            ErrorIcon.Visibility = Visibility.Collapsed;
+            CancelButton.Visibility = Visibility.Collapsed;
+            
+            LoadingStatusText.Text = message;
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#4CAF50"));
+        }
+
+        private void ShowErrorState(string message = "Operation failed")
+        {
+            ReadyIcon.Visibility = Visibility.Collapsed;
+            ProcessingIcon.Visibility = Visibility.Collapsed;
+            SuccessIcon.Visibility = Visibility.Collapsed;
+            ErrorIcon.Visibility = Visibility.Visible;
+            CancelButton.Visibility = Visibility.Collapsed;
+            
+            LoadingStatusText.Text = message;
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#F44336"));
+        }
+
+        private void ShowLoadingIndicator(string message)
+        {
+            ShowProcessingState(message);
+        }
+
+        private void HideLoadingIndicator()
+        {
+            // Don't hide - success/error state will persist
+            // ShowReadyState() is now only called when starting a new operation
         }
     }
 }

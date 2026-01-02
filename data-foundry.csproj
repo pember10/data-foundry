@@ -49,16 +49,18 @@
     <Compile Include="Config\DataFoundryConfig.cs" />
     <Compile Include="Config\TableListConfig.cs" />
     <Compile Include="Constants.cs" />
+    <Compile Include="Converters\NullToVisibilityConverter.cs" />
     <Compile Include="DataFoundryToolWindow.cs" />
     <Compile Include="DataFoundryToolWindowControl.xaml.cs">
       <DependentUpon>DataFoundryToolWindowControl.xaml</DependentUpon>
     </Compile>
     <Compile Include="data_foundryPackage.cs" />
     <Compile Include="Helpers\PathHelper.cs" />
+    <Compile Include="Models\ActivityEntry.cs" />
     <Compile Include="Models\DatabaseChange.cs" />
     <Compile Include="Models\MigrationAction.cs" />
-    <Compile Include="Models\MigrationConfig.cs" />
     <Compile Include="Models\MigrationInfo.cs" />
+    <Compile Include="Models\ShadowDatabaseCacheInfo.cs" />
     <Compile Include="Models\TableChangeSummary.cs" />
     <Compile Include="Options\ConnectionStringEditor.cs" />
     <Compile Include="Options\DataFoundryOptions.cs">
@@ -67,12 +69,17 @@
     <Compile Include="Options\MigrationsFolderListConverter.cs" />
     <Compile Include="Options\SqlProjectListConverter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\ActivityHistoryService.cs" />
     <Compile Include="Services\AzureSqlAuthenticationProvider.cs" />
+    <Compile Include="Services\ChangeDetectionResultsService.cs" />
     <Compile Include="Services\ChangeDetectionService.cs" />
+    <Compile Include="Services\DatabaseSyncStatusService.cs" />
+    <Compile Include="Services\GlobalProcessingStateService.cs" />
     <Compile Include="Services\MigrationScriptGenerator.cs" />
     <Compile Include="Services\MigrationScriptManager.cs" />
     <Compile Include="Services\OutputWindowLogger.cs" />
     <Compile Include="Services\ServicesHelper.cs" />
+    <Compile Include="Services\SettingsChangedService.cs" />
     <Compile Include="Services\SqlMigrationOrchestrator.cs" />
     <Compile Include="Services\SqlMigrationOrchestratorFactory.cs" />
     <Compile Include="Services\SqlMigrationRepository.cs" />
@@ -93,6 +100,9 @@
     <Compile Include="Views\Controls\SettingsTabControl.xaml.cs">
       <DependentUpon>SettingsTabControl.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Views\Controls\TabbedContentControl.xaml.cs">
+      <DependentUpon>TabbedContentControl.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <Content Include="app.config">
@@ -104,6 +114,10 @@
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <None Include="Docs\Assembly_Binding_Redirects.md" />
+    <None Include="Docs\Global_Processing_State.md" />
+    <None Include="Docs\Next_Steps_Checklist.md" />
+    <None Include="Docs\Performance_Optimization_Plan.md" />
+    <None Include="Docs\Performance_Optimization_Summary.md" />
     <None Include="Docs\Quick_Start_Guide.md" />
     <None Include="Docs\UI_Integration_Complete.md" />
     <None Include="README.md" />
@@ -160,6 +174,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\Controls\SettingsTabControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\Controls\TabbedContentControl.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
   </ItemGroup>

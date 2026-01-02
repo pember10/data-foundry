@@ -127,7 +127,7 @@ namespace data_foundry.Services
 
             if (!skipExecution)
             {
-                _repository.ExecuteNonQuery(database, migrationInfo.Content);
+                _repository.ExecuteSqlScript(database, migrationInfo.Content);
             }
 
             var checksum = GetFileChecksum(migrationInfo.FullPath);

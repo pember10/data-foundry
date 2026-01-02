@@ -5,7 +5,7 @@ namespace data_foundry.Config
 {
     public class TableListConfig
     {
-        [JsonProperty("table")]
+        [JsonProperty("tables")]
         public List<string> Tables { get; set; }
     }
 }

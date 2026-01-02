@@ -7,18 +7,27 @@
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="800">
     <UserControl.Resources>
+        <!-- Global Font Style -->
+        <Style TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        
         <Style x:Key="TabItemHeaderStyle" TargetType="TabItem">
+            <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Padding" Value="16,8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="FontSize" Value="16"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="0,0,0,12"/>
             <Setter Property="Foreground" Value="#2C2C2C"/>
         </Style>
         <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="Background" Value="#0078D4"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -43,6 +52,7 @@
             </Setter>
         </Style>
         <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="Background" Value="#F3F3F3"/>
             <Setter Property="Foreground" Value="#2C2C2C"/>
             <Setter Property="BorderBrush" Value="#D1D1D1"/>
@@ -52,7 +62,7 @@
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
     </UserControl.Resources>
-    <Grid Background="#F3F3F3">
+    <Grid Background="#5a0c6f">
         <ContentControl x:Name="MainContent" />
     </Grid>
 </UserControl>

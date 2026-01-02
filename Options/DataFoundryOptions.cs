@@ -22,10 +22,10 @@ namespace data_foundry.Options
         [Description("The connection for the shadow database to use in your development environment. Unless explicitly set, the shadow database connection will be derived from the source database connection.")]
         public string ShadowDatabaseConnection { get; set; }
 
-        [DefaultValue(true)]
+        [DefaultValue(false)]
         [Category("General")]
-        [DisplayName("Auto-refresh changes on project load")]
-        [Description("Automatically refresh changes when the project loads.")]
+        [DisplayName("Auto-refresh changes on solution open")]
+        [Description("Automatically detect database changes when the solution is opened. When disabled, you can manually refresh using the Changes tab.")]
         public bool AutoRefresh { get; set; }
 
         [DefaultValue(true)]
@@ -147,6 +147,18 @@ namespace data_foundry.Options
                     System.IO.Directory.CreateDirectory(directory);
 
                 System.IO.File.WriteAllText(configPath, json);
+            }
+        }
+
+        protected override void OnApply(PageApplyEventArgs e)
+        {
+            base.OnApply(e);
+            
+            // Notify all tabs that settings have been saved
+            if (e.ApplyBehavior == ApplyKind.Apply)
+            {
+                Services.SettingsChangedService.Instance.NotifySettingsChanged();
+                Services.DatabaseSyncStatusService.Instance.NotifySyncStatusChanged();
             }
         }
     }

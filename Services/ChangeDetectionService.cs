@@ -34,10 +34,28 @@ namespace data_foundry.Services
                 throw new ArgumentException($"Identifier exceeds maximum length of 128 characters.", parameterName);
             }
 
-            // SQL identifiers: alphanumeric, underscore, no spaces or special characters
-            if (!Regex.IsMatch(identifier, Constants.RegularExpressions.SqlIdentifier))
+            // For database names, allow dots and hyphens (common in SQL Server database names)
+            // For table/column names, use strict validation
+            bool isDatabaseName = parameterName.IndexOf("database", StringComparison.OrdinalIgnoreCase) >= 0;
+            
+            if (isDatabaseName)
             {
-                throw new ArgumentException($"Identifier contains invalid characters. Only alphanumeric and underscore allowed.", parameterName);
+                // Database names: allow alphanumeric, underscore, dot, and hyphen
+                // Disallow dangerous characters that could be used for SQL injection
+                if (identifier.Contains("'") || identifier.Contains("\"") || identifier.Contains(";") || 
+                    identifier.Contains("--") || identifier.Contains("/*") || identifier.Contains("*/") ||
+                    identifier.Contains("xp_") || identifier.Contains("sp_"))
+                {
+                    throw new ArgumentException($"Identifier contains invalid or dangerous characters.", parameterName);
+                }
+            }
+            else
+            {
+                // Table/column names: strict validation (alphanumeric and underscore only)
+                if (!Regex.IsMatch(identifier, Constants.RegularExpressions.SqlIdentifier))
+                {
+                    throw new ArgumentException($"Identifier contains invalid characters. Only alphanumeric and underscore allowed.", parameterName);
+                }
             }
         }
 
@@ -53,6 +71,7 @@ namespace data_foundry.Services
 
         /// <summary>
         /// Gets a summary of changes for a specific table.
+        /// PERFORMANCE OPTIMIZED: Uses EXISTS instead of EXCEPT for better performance.
         /// </summary>
         public TableChangeSummary GetTableDiffCounts(string targetDatabase, string shadowDatabase, string table)
         {
@@ -62,70 +81,77 @@ namespace data_foundry.Services
             ValidateIdentifier(table, nameof(table));
 
             var pk = _repository.GetPrimaryKeyColumns(targetDatabase, table);
-            int updateCount = 0;
-
-            if (pk != null && pk.Count > 0)
+            
+            if (pk == null || pk.Count == 0)
             {
-                updateCount = GetUpdateCount(targetDatabase, shadowDatabase, table, pk, updateCount);
+                // No primary key - fall back to simple row count comparison
+                return GetChangeCountsWithoutPrimaryKey(targetDatabase, shadowDatabase, table);
             }
 
-            // Count inserts and deletes using EXCEPT
-            var insertSql = $"SELECT COUNT(*) AS c FROM (SELECT * FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} EXCEPT SELECT * FROM {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)}) x";
-            var deleteSql = $"SELECT COUNT(*) AS c FROM (SELECT * FROM {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)} EXCEPT SELECT * FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)}) x";
+            // PERFORMANCE OPTIMIZATION: Single combined query instead of 4 separate queries
+            var pkJoin = string.Join(" AND ", pk.Select(col => $"t.{QuoteIdentifier(col)} = s.{QuoteIdentifier(col)}"));
+            var pkJoinReverse = string.Join(" AND ", pk.Select(col => $"s.{QuoteIdentifier(col)} = t.{QuoteIdentifier(col)}"));
+            
+            var nonPk = _repository.GetNonPrimaryColumns(targetDatabase, table, pk);
+            string dataCompare = "1=1"; // Default: no non-PK columns to compare
+            
+            if (nonPk.Count > 0)
+            {
+                // Use CHECKSUM for performance - need to prefix each column with table alias
+                var targetCols = string.Join(", ", nonPk.Select(c => $"t.{QuoteIdentifier(c)}"));
+                var shadowCols = string.Join(", ", nonPk.Select(c => $"s.{QuoteIdentifier(c)}"));
+                dataCompare = $"CHECKSUM({targetCols}) <> CHECKSUM({shadowCols})";
+            }
 
-            var insertResult = _repository.ExecuteQuery(targetDatabase, insertSql);
-            var deleteResult = _repository.ExecuteQuery(targetDatabase, deleteSql);
+            var combinedSql = $@"
+SELECT 
+    (SELECT COUNT(*) FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} t 
+     WHERE NOT EXISTS (SELECT 1 FROM {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)} s WHERE {pkJoin})) AS Inserts,
+    (SELECT COUNT(*) FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} t 
+     INNER JOIN {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)} s ON {pkJoin}
+     WHERE {dataCompare}) AS Updates,
+    (SELECT COUNT(*) FROM {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)} s 
+     WHERE NOT EXISTS (SELECT 1 FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} t WHERE {pkJoinReverse})) AS Deletes";
 
-            var insertCount = insertResult.Rows.Count > 0 ? Convert.ToInt32(insertResult.Rows[0]["c"]) - updateCount : 0;
-            var deleteCount = deleteResult.Rows.Count > 0 ? Convert.ToInt32(deleteResult.Rows[0]["c"]) - updateCount : 0;
+            var result = _repository.ExecuteQuery(targetDatabase, combinedSql);
+            
+            if (result.Rows.Count == 0)
+            {
+                return new TableChangeSummary { Table = table, Inserts = 0, Updates = 0, Deletes = 0 };
+            }
 
             return new TableChangeSummary
             {
                 Table = table,
-                Inserts = insertCount,
-                Updates = updateCount,
-                Deletes = deleteCount
+                Inserts = Convert.ToInt32(result.Rows[0]["Inserts"]),
+                Updates = Convert.ToInt32(result.Rows[0]["Updates"]),
+                Deletes = Convert.ToInt32(result.Rows[0]["Deletes"])
             };
         }
 
-        private int GetUpdateCount(string targetDatabase, string shadowDatabase, string table, List<string> pk, int updateCount)
+        /// <summary>
+        /// Fallback method for tables without primary keys (compares row counts only).
+        /// </summary>
+        private TableChangeSummary GetChangeCountsWithoutPrimaryKey(string targetDatabase, string shadowDatabase, string table)
         {
-            // Validate primary key column names
-            foreach (var col in pk)
+            var targetCountSql = $"SELECT COUNT(*) AS c FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)}";
+            var shadowCountSql = $"SELECT COUNT(*) AS c FROM {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)}";
+
+            var targetResult = _repository.ExecuteQuery(targetDatabase, targetCountSql);
+            var shadowResult = _repository.ExecuteQuery(shadowDatabase, shadowCountSql);
+
+            var targetCount = targetResult.Rows.Count > 0 ? Convert.ToInt32(targetResult.Rows[0]["c"]) : 0;
+            var shadowCount = shadowResult.Rows.Count > 0 ? Convert.ToInt32(shadowResult.Rows[0]["c"]) : 0;
+
+            var difference = targetCount - shadowCount;
+
+            return new TableChangeSummary
             {
-                ValidateIdentifier(col, "primaryKeyColumn");
-            }
-
-            var nonPk = _repository.GetNonPrimaryColumns(targetDatabase, table, pk);
-
-            if (nonPk.Count > 0)
-            {
-                // Validate non-primary key column names
-                foreach (var col in nonPk)
-                {
-                    ValidateIdentifier(col, "nonPrimaryKeyColumn");
-                }
-
-                var join = string.Join(" AND ", pk.Select(col => $"p.{QuoteIdentifier(col)}=s.{QuoteIdentifier(col)}"));
-                var hashCols = string.Join(", '|' ,", nonPk.Select(col => $"ISNULL(CONVERT(nvarchar(max),p.{QuoteIdentifier(col)}),'#NULL#')"));
-                var hashColsShadow = string.Join(", '|' ,", nonPk.Select(col => $"ISNULL(CONVERT(nvarchar(max),s.{QuoteIdentifier(col)}),'#NULL#')"));
-
-                if (nonPk.Count > 1)
-                {
-                    hashCols = $"CONCAT({hashCols})";
-                    hashColsShadow = $"CONCAT({hashColsShadow})";
-                }
-
-                var updateSql = $@"
-SELECT COUNT(*) AS c FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} p
-JOIN {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)} s ON {join}
-WHERE HASHBYTES('SHA2_256', {hashCols}) <> HASHBYTES('SHA2_256', {hashColsShadow});";
-
-                var result = _repository.ExecuteQuery(targetDatabase, updateSql);
-                updateCount = result.Rows.Count > 0 ? Convert.ToInt32(result.Rows[0]["c"]) : 0;
-            }
-
-            return updateCount;
+                Table = table,
+                Inserts = difference > 0 ? difference : 0,
+                Updates = 0, // Cannot determine without PK
+                Deletes = difference < 0 ? Math.Abs(difference) : 0
+            };
         }
 
         /// <summary>
@@ -134,10 +160,18 @@ WHERE HASHBYTES('SHA2_256', {hashCols}) <> HASHBYTES('SHA2_256', {hashColsShadow
         public List<TableChangeSummary> GetChangesSummary(string targetDatabase, string shadowDatabase, List<string> tables)
         {
             var results = new List<TableChangeSummary>();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
 
             foreach (var table in tables)
             {
+                var tableStart = sw.ElapsedMilliseconds;
                 results.Add(GetTableDiffCounts(targetDatabase, shadowDatabase, table));
+                var tableTime = sw.ElapsedMilliseconds - tableStart;
+                
+                if (tableTime > 1000) // Log if table takes more than 1 second
+                {
+                    System.Diagnostics.Debug.WriteLine($"Table {table} took {tableTime}ms to analyze");
+                }
             }
 
             return results;

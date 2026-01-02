@@ -1,6 +1,7 @@
 using data_foundry.Models;
 using data_foundry.Options;
 using data_foundry.Helpers;
+using data_foundry.Config;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
@@ -28,6 +29,11 @@ namespace data_foundry.Services
         private readonly MigrationScriptManager _scriptManager;
         private readonly ChangeDetectionService _changeDetection;
         private readonly MigrationScriptGenerator _scriptGenerator;
+
+        // Performance optimization: Track shadow database state (in-memory + persisted)
+        private static string _lastShadowMigrationHash = null;
+        private static readonly object _shadowDbLock = new object();
+        private readonly string _shadowCacheFilePath;
 
         /// <summary>
         /// Creates a new instance using DataFoundryOptions from the VS package.
@@ -101,6 +107,13 @@ namespace data_foundry.Services
 
             if (!File.Exists(_migrationLogSchemaPath))
                 throw new FileNotFoundException($"Migration log schema not found: {_migrationLogSchemaPath}");
+
+            // Set shadow cache file path
+            var cacheDir = PathHelper.GetSafeDirectoryName(_configPath);
+            if (!string.IsNullOrEmpty(cacheDir))
+            {
+                _shadowCacheFilePath = PathHelper.SafeCombine(cacheDir, "shadow-cache.json");
+            }
 
             // Initialize services
             var authProvider = new AzureSqlAuthenticationProvider();
@@ -188,6 +201,13 @@ namespace data_foundry.Services
             if (!File.Exists(_migrationLogSchemaPath))
                 throw new FileNotFoundException($"Migration log schema not found: {_migrationLogSchemaPath}");
 
+            // Set shadow cache file path
+            var cacheDir = PathHelper.GetSafeDirectoryName(_configPath);
+            if (!string.IsNullOrEmpty(cacheDir))
+            {
+                _shadowCacheFilePath = PathHelper.SafeCombine(cacheDir, "shadow-cache.json");
+            }
+
             // Initialize services
             var authProvider = new AzureSqlAuthenticationProvider();
             var accessToken = authProvider.GetAccessToken(_targetServer);
@@ -228,45 +248,91 @@ namespace data_foundry.Services
         public void ExecuteTargetMigrations(bool requireConfirmation = false, Action<string> logger = null)
         {
             logger = logger ?? Console.WriteLine;
+            var startTime = DateTime.Now;
+            ActivityEntry activity = null;
 
-            // Ensure database exists (skip for Azure SQL)
-            if (!_targetServer.Contains(Constants.Azure.AzureSqlDomain))
+            try
             {
-                logger("Ensuring target database");
-                _repository.CreateDatabaseIfMissing(_targetDatabase);
-            }
+                // Start tracking activity
+                activity = ActivityHistoryService.Instance.StartActivity(
+                    ActivityType.Deployment,
+                    "Deployment started");
 
-            logger("Ensuring migration log table");
-            _repository.EnsureMigrationLogTable(_targetDatabase, _migrationLogSchemaPath);
-
-            var pendingMigrations = _scriptManager.GetPendingMigrations(_targetDatabase);
-
-            if (pendingMigrations.Count == 0)
-            {
-                logger("No pending migrations found.");
-                return;
-            }
-
-            if (requireConfirmation)
-            {
-                logger("Pending migrations:");
-                foreach (var m in pendingMigrations)
+                // Ensure database exists (skip for Azure SQL)
+                if (!_targetServer.Contains(Constants.Azure.AzureSqlDomain))
                 {
-                    logger($"  -> {m.FileName} [{m.Id}]");
+                    logger("Ensuring target database");
+                    _repository.CreateDatabaseIfMissing(_targetDatabase);
                 }
-                
-                logger("Execute these migrations? (y/n)");
-                // Note: In a real UI implementation, you'd get user input here
-                // For now, this is just a placeholder
-            }
 
-            foreach (var migration in pendingMigrations)
+                logger("Ensuring migration log table");
+                _repository.EnsureMigrationLogTable(_targetDatabase, _migrationLogSchemaPath);
+
+                var pendingMigrations = _scriptManager.GetPendingMigrations(_targetDatabase);
+
+                if (pendingMigrations.Count == 0)
+                {
+                    logger("No pending migrations found.");
+                    
+                    // Update activity
+                    if (activity != null)
+                    {
+                        ActivityHistoryService.Instance.UpdateActivity(
+                            activity,
+                            ActivityStatus.Success,
+                            "No pending migrations",
+                            DateTime.Now - startTime);
+                    }
+                    return;
+                }
+
+                if (requireConfirmation)
+                {
+                    logger("Pending migrations:");
+                    foreach (var m in pendingMigrations)
+                    {
+                        logger($"  -> {m.FileName} [{m.Id}]");
+                    }
+                    
+                    logger("Execute these migrations? (y/n)");
+                    // Note: In a real UI implementation, you'd get user input here
+                    // For now, this is just a placeholder
+                }
+
+                foreach (var migration in pendingMigrations)
+                {
+                    logger($"Executing migration {migration.Id} ({migration.FileName}) on {_targetDatabase}");
+                    _scriptManager.ExecuteMigrationScript(_targetDatabase, migration);
+                }
+
+                logger("Migrations complete.");
+
+                // Update activity with success
+                if (activity != null)
+                {
+                    ActivityHistoryService.Instance.UpdateActivity(
+                        activity,
+                        ActivityStatus.Success,
+                        $"{pendingMigrations.Count} migration(s) executed successfully",
+                        DateTime.Now - startTime);
+                }
+            }
+            catch (Exception ex)
             {
-                logger($"Executing migration {migration.Id} ({migration.FileName}) on {_targetDatabase}");
-                _scriptManager.ExecuteMigrationScript(_targetDatabase, migration);
-            }
+                logger($"ERROR: {ex.Message}");
 
-            logger("Migrations complete.");
+                // Update activity with failure
+                if (activity != null)
+                {
+                    ActivityHistoryService.Instance.UpdateActivity(
+                        activity,
+                        ActivityStatus.Failed,
+                        $"Deployment failed: {ex.Message}",
+                        DateTime.Now - startTime);
+                }
+
+                throw;
+            }
         }
 
         /// <summary>
@@ -275,83 +341,245 @@ namespace data_foundry.Services
         public List<TableChangeSummary> DetectAndHandleChanges(MigrationAction? action = null, Action<string> logger = null)
         {
             logger = logger ?? Console.WriteLine;
+            var startTime = DateTime.Now;
+            ActivityEntry activity = null;
 
-            var config = LoadConfig();
-            if (config.TrackedTables == null || config.TrackedTables.Count == 0)
+            try
             {
-                logger("No TrackedTables found in config.");
-                return new List<TableChangeSummary>();
-            }
+                // Start tracking activity
+                activity = ActivityHistoryService.Instance.StartActivity(
+                    ActivityType.ChangeDetection,
+                    "Change detection started");
 
-            // Create shadow database and apply migrations
-            logger("Recreating shadow database");
-            _repository.DropAndRecreateDatabase(_shadowDatabase);
-            _repository.EnsureMigrationLogTable(_shadowDatabase, _migrationLogSchemaPath);
-
-            var pendingShadow = _scriptManager.GetPendingMigrations(_shadowDatabase);
-            foreach (var migration in pendingShadow)
-            {
-                _scriptManager.ExecuteMigrationScript(_shadowDatabase, migration);
-            }
-            logger("Shadow migrations complete.");
-
-            // Detect changes
-            logger("Detecting changes between target and shadow...");
-            var summary = _changeDetection.GetChangesSummary(_targetDatabase, _shadowDatabase, config.TrackedTables);
-            var diffs = summary.Where(s => s.HasChanges).ToList();
-
-            if (diffs.Count == 0)
-            {
-                logger("No changes detected.");
-                return summary;
-            }
-
-            logger("Changes detected:");
-            foreach (var diff in diffs)
-            {
-                logger($"  {diff.Table}: {diff.Inserts} inserts, {diff.Updates} updates, {diff.Deletes} deletes");
-            }
-
-            if (!action.HasValue)
-            {
-                // In a real UI, you'd prompt the user here
-                logger("No action specified. Skipping change handling.");
-                return summary;
-            }
-
-            var tables = diffs.Select(d => d.Table).ToList();
-
-            switch (action.Value)
-            {
-                case MigrationAction.Revert:
-                    logger($"Reverting changes in {_targetDatabase}");
-                    _changeDetection.RevertChanges(_targetDatabase, _shadowDatabase, tables);
-                    logger("Revert complete.");
-                    break;
-
-                case MigrationAction.Migrate:
-                    logger("Generating migration script");
-                    // In a real UI, you'd prompt for script name
-                    var scriptName = $"Migration_{DateTime.Now:yyyyMMdd_HHmmss}";
-                    var filePath = _scriptGenerator.GenerateMigrationScript(
-                        _targetDatabase, _shadowDatabase, tables, _outputMigrationDir, scriptName);
-                    logger($"Generated migration script: {filePath}");
-
-                    // Log the generated script
-                    var migrationInfo = _scriptManager.GetMigrationInfoFromFile(filePath);
-                    if (migrationInfo != null)
+                var config = LoadConfig();
+                if (config.Tables == null || config.Tables.Count == 0)
+                {
+                    logger("No TrackedTables found in config.");
+                    
+                    if (activity != null)
                     {
-                        logger("Logging newly generated migration script to migration log");
-                        _scriptManager.ExecuteMigrationScript(_targetDatabase, migrationInfo, skipExecution: true);
+                        ActivityHistoryService.Instance.UpdateActivity(
+                            activity,
+                            ActivityStatus.Warning,
+                            "No tracked tables configured",
+                            DateTime.Now - startTime);
                     }
-                    break;
+                    return new List<TableChangeSummary>();
+                }
 
-                case MigrationAction.Cancel:
-                    logger("Action cancelled. No changes applied.");
-                    break;
+                // PERFORMANCE OPTIMIZATION: Smart shadow database management with persistent cache
+                var currentMigrationHash = GetMigrationsHash();
+                bool needsRecreate = false;
+                string cacheSource = "memory";
+                
+                lock (_shadowDbLock)
+                {
+                    // First check: Does shadow database exist?
+                    if (!_repository.DatabaseExists(_shadowDatabase))
+                    {
+                        needsRecreate = true;
+                        logger("Shadow database does not exist");
+                    }
+                    else
+                    {
+                        // Second check: In-memory cache
+                        if (_lastShadowMigrationHash != null && _lastShadowMigrationHash == currentMigrationHash)
+                        {
+                            cacheSource = "memory";
+                            needsRecreate = false;
+                        }
+                        else
+                        {
+                            // Third check: Persisted cache
+                            var cachedInfo = LoadShadowCache();
+                            if (cachedInfo != null && cachedInfo.Hash == currentMigrationHash)
+                            {
+                                // Cache hit - validate integrity
+                                if (ValidateShadowDatabase(cachedInfo))
+                                {
+                                    cacheSource = "disk";
+                                    needsRecreate = false;
+                                    // Update in-memory cache
+                                    _lastShadowMigrationHash = currentMigrationHash;
+                                }
+                                else
+                                {
+                                    logger("Shadow database validation failed - cache corrupted");
+                                    needsRecreate = true;
+                                }
+                            }
+                            else
+                            {
+                                // Cache miss - migrations changed
+                                needsRecreate = true;
+                            }
+                        }
+                    }
+                }
+
+                if (needsRecreate)
+                {
+                    logger("Shadow database out of date or missing - recreating...");
+                    var syncStart = DateTime.Now;
+                    
+                    logger("Step 1/4: Dropping existing shadow database...");
+                    _repository.DropAndRecreateDatabase(_shadowDatabase);
+                    
+                    logger("Step 2/4: Creating migration log table...");
+                    _repository.EnsureMigrationLogTable(_shadowDatabase, _migrationLogSchemaPath);
+
+                    logger("Step 3/4: Loading pending migrations...");
+                    var pendingShadow = _scriptManager.GetPendingMigrations(_shadowDatabase);
+                    logger($"Found {pendingShadow.Count} migration(s) to apply");
+                    
+                    logger("Step 4/4: Executing migrations...");
+                    for (int i = 0; i < pendingShadow.Count; i++)
+                    {
+                        var migration = pendingShadow[i];
+                        var migrationName = Path.GetFileName(migration.FileName);
+                        logger($"  [{i + 1}/{pendingShadow.Count}] Applying {migrationName}...");
+                        _scriptManager.ExecuteMigrationScript(_shadowDatabase, migration);
+                    }
+                    
+                    lock (_shadowDbLock)
+                    {
+                        _lastShadowMigrationHash = currentMigrationHash;
+                        SaveShadowCache(currentMigrationHash, pendingShadow.Count);
+                    }
+                    
+                    logger($"Shadow database synchronized in {(DateTime.Now - syncStart).TotalSeconds:F1}s");
+                }
+                else
+                {
+                    logger($"Shadow database is up to date - using cached version (source: {cacheSource})");
+                }
+
+                // Detect changes
+                logger("Detecting changes between target and shadow...");
+                var detectStart = DateTime.Now;
+                
+                logger($"Analyzing {config.Tables.Count} tables...");
+                var summary = _changeDetection.GetChangesSummary(_targetDatabase, _shadowDatabase, config.Tables);
+                
+                var detectTime = (DateTime.Now - detectStart).TotalSeconds;
+                logger($"Change detection completed in {detectTime:F1}s ({detectTime / config.Tables.Count:F2}s per table)");
+                
+                var diffs = summary.Where(s => s.HasChanges).ToList();
+
+                if (diffs.Count == 0)
+                {
+                    logger("No changes detected.");
+                    
+                    if (activity != null)
+                    {
+                        ActivityHistoryService.Instance.UpdateActivity(
+                            activity,
+                            ActivityStatus.Success,
+                            "No changes detected",
+                            DateTime.Now - startTime);
+                    }
+                    return summary;
+                }
+
+                logger("Changes detected:");
+                foreach (var diff in diffs)
+                {
+                    logger($"  {diff.Table}: {diff.Inserts} inserts, {diff.Updates} updates, {diff.Deletes} deletes");
+                }
+
+                if (!action.HasValue)
+                {
+                    // In a real UI, you'd prompt the user here
+                    logger("No action specified. Skipping change handling.");
+                    
+                    if (activity != null)
+                    {
+                        var totalChanges = diffs.Sum(d => d.Inserts + d.Updates + d.Deletes);
+                        ActivityHistoryService.Instance.UpdateActivity(
+                            activity,
+                            ActivityStatus.Success,
+                            $"{diffs.Count} table(s) with changes detected ({totalChanges} total changes)",
+                            DateTime.Now - startTime);
+                    }
+                    return summary;
+                }
+
+                var tables = diffs.Select(d => d.Table).ToList();
+
+                switch (action.Value)
+                {
+                    case MigrationAction.Revert:
+                        logger($"Reverting changes in {_targetDatabase}");
+                        _changeDetection.RevertChanges(_targetDatabase, _shadowDatabase, tables);
+                        logger("Revert complete.");
+                        
+                        if (activity != null)
+                        {
+                            ActivityHistoryService.Instance.UpdateActivity(
+                                activity,
+                                ActivityStatus.Success,
+                                $"Changes reverted for {tables.Count} table(s)",
+                                DateTime.Now - startTime);
+                        }
+                        break;
+
+                    case MigrationAction.Migrate:
+                        logger("Generating migration script");
+                        // In a real UI, you'd prompt for script name
+                        var scriptName = $"Migration_{DateTime.Now:yyyyMMdd_HHmmss}";
+                        var filePath = _scriptGenerator.GenerateMigrationScript(
+                            _targetDatabase, _shadowDatabase, tables, _outputMigrationDir, scriptName);
+                        logger($"Generated migration script: {filePath}");
+
+                        // Log the generated script
+                        var migrationInfo = _scriptManager.GetMigrationInfoFromFile(filePath);
+                        if (migrationInfo != null)
+                        {
+                            logger("Logging newly generated migration script to migration log");
+                            _scriptManager.ExecuteMigrationScript(_targetDatabase, migrationInfo, skipExecution: true);
+                        }
+                        
+                        if (activity != null)
+                        {
+                            ActivityHistoryService.Instance.UpdateActivity(
+                                activity,
+                                ActivityStatus.Success,
+                                $"Migration script generated: {Path.GetFileName(filePath)}",
+                                DateTime.Now - startTime);
+                        }
+                        break;
+
+                    case MigrationAction.Cancel:
+                        logger("Action cancelled. No changes applied.");
+                        
+                        if (activity != null)
+                        {
+                            ActivityHistoryService.Instance.UpdateActivity(
+                                activity,
+                                ActivityStatus.Cancelled,
+                                "Operation cancelled by user",
+                                DateTime.Now - startTime);
+                        }
+                        break;
+                }
+
+                return summary;
             }
+            catch (Exception ex)
+            {
+                logger($"ERROR: {ex.Message}");
 
-            return summary;
+                if (activity != null)
+                {
+                    ActivityHistoryService.Instance.UpdateActivity(
+                        activity,
+                        ActivityStatus.Failed,
+                        $"Change detection failed: {ex.Message}",
+                        DateTime.Now - startTime);
+                }
+
+                throw;
+            }
         }
 
         /// <summary>
@@ -379,10 +607,198 @@ namespace data_foundry.Services
             }
         }
 
-        private MigrationConfig LoadConfig()
+        /// <summary>
+        /// Generates a migration script with a custom name for the specified tables.
+        /// </summary>
+        public string GenerateMigrationScriptWithName(List<string> tableNames, string scriptName)
+        {
+            var startTime = DateTime.Now;
+            ActivityEntry activity = null;
+
+            try
+            {
+                // Start tracking activity
+                activity = ActivityHistoryService.Instance.StartActivity(
+                    ActivityType.MigrationGeneration,
+                    "Migration script generation started");
+
+                // Create shadow database and apply migrations
+                _repository.DropAndRecreateDatabase(_shadowDatabase);
+                _repository.EnsureMigrationLogTable(_shadowDatabase, _migrationLogSchemaPath);
+
+                var pendingShadow = _scriptManager.GetPendingMigrations(_shadowDatabase);
+                foreach (var migration in pendingShadow)
+                {
+                    _scriptManager.ExecuteMigrationScript(_shadowDatabase, migration);
+                }
+
+                // Generate the migration script
+                var filePath = _scriptGenerator.GenerateMigrationScript(
+                    _targetDatabase, 
+                    _shadowDatabase, 
+                    tableNames, 
+                    _outputMigrationDir, 
+                    scriptName);
+
+                // Log the generated script to migration log (skip execution)
+                var migrationInfo = _scriptManager.GetMigrationInfoFromFile(filePath);
+                if (migrationInfo != null)
+                {
+                    _scriptManager.ExecuteMigrationScript(_targetDatabase, migrationInfo, skipExecution: true);
+                }
+
+                // Update activity with success
+                if (activity != null)
+                {
+                    ActivityHistoryService.Instance.UpdateActivity(
+                        activity,
+                        ActivityStatus.Success,
+                        $"Migration script generated: {Path.GetFileName(filePath)}",
+                        DateTime.Now - startTime);
+                }
+
+                return filePath;
+            }
+            catch (Exception ex)
+            {
+                // Update activity with failure
+                if (activity != null)
+                {
+                    ActivityHistoryService.Instance.UpdateActivity(
+                        activity,
+                        ActivityStatus.Failed,
+                        $"Script generation failed: {ex.Message}",
+                        DateTime.Now - startTime);
+                }
+
+                throw;
+            }
+            finally
+            {
+                // Clear connection pools
+                SqlConnection.ClearAllPools();
+            }
+        }
+        
+        private TableListConfig LoadConfig()
         {
             var json = File.ReadAllText(_configPath);
-            return JsonConvert.DeserializeObject<MigrationConfig>(json);
+            return JsonConvert.DeserializeObject<TableListConfig>(json);
+        }
+
+        /// <summary>
+        /// Calculates a hash of all migration files to detect if shadow database needs refresh.
+        /// </summary>
+        private string GetMigrationsHash()
+        {
+            try
+            {
+                var files = Directory.GetFiles(_outputMigrationDir, "*.sql", SearchOption.AllDirectories)
+                    .OrderBy(f => f)
+                    .ToList();
+
+                if (files.Count == 0)
+                    return "EMPTY";
+
+                var combinedHash = string.Join("|", files.Select(f => 
+                    $"{Path.GetFileName(f)}:{new FileInfo(f).LastWriteTimeUtc.Ticks}"));
+
+                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                {
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(combinedHash);
+                    var hash = sha256.ComputeHash(bytes);
+                    return BitConverter.ToString(hash).Replace("-", "");
+                }
+            }
+            catch
+            {
+                return Guid.NewGuid().ToString(); // Force refresh on error
+            }
+        }
+
+        /// <summary>
+        /// Loads the cached shadow database information from disk.
+        /// </summary>
+        private ShadowDatabaseCacheInfo LoadShadowCache()
+        {
+            if (string.IsNullOrEmpty(_shadowCacheFilePath) || !File.Exists(_shadowCacheFilePath))
+                return null;
+
+            try
+            {
+                var json = File.ReadAllText(_shadowCacheFilePath);
+                return JsonConvert.DeserializeObject<ShadowDatabaseCacheInfo>(json);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Saves the shadow database cache information to disk.
+        /// </summary>
+        private void SaveShadowCache(string hash, int migrationCount)
+        {
+            if (string.IsNullOrEmpty(_shadowCacheFilePath))
+                return;
+
+            try
+            {
+                var cacheInfo = new ShadowDatabaseCacheInfo
+                {
+                    Hash = hash,
+                    MigrationCount = migrationCount,
+                    LastUpdated = DateTime.UtcNow,
+                    DatabaseName = _shadowDatabase
+                };
+
+                var json = JsonConvert.SerializeObject(cacheInfo, Formatting.Indented);
+                File.WriteAllText(_shadowCacheFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to save shadow cache: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Validates that the shadow database matches the cached state.
+        /// </summary>
+        private bool ValidateShadowDatabase(ShadowDatabaseCacheInfo cache)
+        {
+            if (cache == null || cache.DatabaseName != _shadowDatabase)
+                return false;
+
+            try
+            {
+                // Quick validation: check migration count
+                var appliedMigrations = _repository.GetExecutedMigrationIds(_shadowDatabase);
+                return appliedMigrations.Count == cache.MigrationCount;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the list of pending migrations that have not been applied to the target database.
+        /// </summary>
+        /// <returns>List of pending migrations, or empty list if all are applied</returns>
+        public List<MigrationInfo> GetPendingMigrationsForTarget()
+        {
+            return _scriptManager.GetPendingMigrations(_targetDatabase);
+        }
+
+        /// <summary>
+        /// Checks if the target database is in sync with all migration scripts.
+        /// </summary>
+        /// <returns>True if all migrations are applied, false if there are pending migrations</returns>
+        public bool IsTargetDatabaseInSync()
+        {
+            var pending = GetPendingMigrationsForTarget();
+            return pending == null || pending.Count == 0;
         }
 
         private static void EnsureConfigFileExists(string configPath)
@@ -391,9 +807,9 @@ namespace data_foundry.Services
                 return;
 
             // Create default config with empty tracked tables
-            var defaultConfig = new MigrationConfig
+            var defaultConfig = new TableListConfig
             {
-                TrackedTables = new List<string>()
+                Tables = new List<string>()
             };
 
             var json = JsonConvert.SerializeObject(defaultConfig, Formatting.Indented);
