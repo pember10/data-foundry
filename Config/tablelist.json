@@ -1,0 +1,13 @@
+{
+  "tables": [
+    "ModelMetadata",
+    "Resource",
+    "SecurityGroup",
+    "SecurityGroupPermission",
+    "Setting",
+    "Tenant",
+    "TenantEnvironment",
+    "TenantResource",
+    "Host"
+  ]
+}
