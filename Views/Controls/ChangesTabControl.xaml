@@ -37,6 +37,7 @@
                 <ComboBoxItem Content="No Changes"/>
             </ComboBox>
             <Button Content="Refresh Changes" Style="{DynamicResource SecondaryButtonStyle}" x:Name="RefreshChangesBtn" Margin="0,0,8,0"/>
+            <Button Content="Revert Changes" Style="{DynamicResource SecondaryButtonStyle}" x:Name="RevertChangesBtn" Margin="0,0,8,0"/>
             <Button Content="Generate Script" Style="{DynamicResource PrimaryButtonStyle}" x:Name="GenerateScriptBtn"/>
         </StackPanel>
 

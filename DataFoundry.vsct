@@ -2,17 +2,22 @@
 <CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
 	<Extern href="stdidcmd.h" />
 	<Extern href="vsshlids.h" />
+	<Extern href="KnownImageIds.vsct" />
 	<Commands package="guidDataFoundryPackage">
 		<Groups>
 			<Group guid="guidDataFoundryPackageCmdSet" id="DataFoundryGroup" priority="0x0100">
 				<Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW" />
 			</Group>
 		</Groups>
+		<Bitmaps>
+			<Bitmap guid="guidCustomIcons" href="Resources\CompareDatabases.png" usedList="customIcon1" />
+		</Bitmaps>
 		<Buttons>
 			<Button guid="guidDataFoundryPackageCmdSet" id="cmdidShowDataFoundryToolWindow" priority="0x0100" type="Button">
 				<Parent guid="guidDataFoundryPackageCmdSet" id="DataFoundryGroup" />
+				<Icon guid="guidCustomIcons" id="customIcon1" />
 				<Strings>
-					<ButtonText>Data Foundry</ButtonText>
+					<ButtonText>WTW Diffusion</ButtonText>
 				</Strings>
 			</Button>
 		</Buttons>
@@ -22,6 +27,10 @@
 		<GuidSymbol name="guidDataFoundryPackageCmdSet" value="{c1e7a1c2-2e4a-4e7a-9c2a-1e2a3c4b5d6f}">
 			<IDSymbol name="DataFoundryGroup" value="0x1020" />
 			<IDSymbol name="cmdidShowDataFoundryToolWindow" value="0x0100" />
+		</GuidSymbol>
+		<GuidSymbol name="ImageCatalogGuid" value="{ae27a6b0-e345-4288-96df-5eaf394ee369}" />
+		<GuidSymbol name="guidCustomIcons" value="{2627b64b-2eac-4c14-9533-f01c16c14145}">
+			<IDSymbol name="customIcon1" value="1" />
 		</GuidSymbol>
 	</Symbols>
 </CommandTable>

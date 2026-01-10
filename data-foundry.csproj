@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
@@ -73,11 +73,18 @@
     <Compile Include="Services\AzureSqlAuthenticationProvider.cs" />
     <Compile Include="Services\ChangeDetectionResultsService.cs" />
     <Compile Include="Services\ChangeDetectionService.cs" />
+    <Compile Include="Services\CSharpMigrationExecutor.cs" />
     <Compile Include="Services\DatabaseSyncStatusService.cs" />
     <Compile Include="Services\GlobalProcessingStateService.cs" />
+    <Compile Include="Services\IMigrationExecutor.cs" />
     <Compile Include="Services\MigrationScriptGenerator.cs" />
     <Compile Include="Services\MigrationScriptManager.cs" />
     <Compile Include="Services\OutputWindowLogger.cs" />
+    <Compile Include="Services\PowerShellMigrationExecutor.cs" />
+    <Compile Include="Services\PowerShellOrchestratorWrapper.cs" />
+    <Compile Include="Services\PowerShellOutputParser.cs" />
+    <Compile Include="Services\PowerShellResult.cs" />
+    <Compile Include="Services\PowerShellScriptRunner.cs" />
     <Compile Include="Services\ServicesHelper.cs" />
     <Compile Include="Services\SettingsChangedService.cs" />
     <Compile Include="Services\SqlMigrationOrchestrator.cs" />
@@ -109,6 +116,8 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <Content Include="Resources\CompareDatabases.png"><CopyToOutputDirectory>Always</CopyToOutputDirectory><IncludeInVSIX>true</IncludeInVSIX></Content>
+    <Content Include="Resources\CompareDatabases.svg"><IncludeInVSIX>true</IncludeInVSIX></Content>
     <Content Include="Config\tablelist.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
@@ -118,9 +127,12 @@
     <None Include="Docs\Next_Steps_Checklist.md" />
     <None Include="Docs\Performance_Optimization_Plan.md" />
     <None Include="Docs\Performance_Optimization_Summary.md" />
+    <None Include="Docs\PowerShell_Integration_Implementation.md" />
     <None Include="Docs\Quick_Start_Guide.md" />
     <None Include="Docs\UI_Integration_Complete.md" />
     <None Include="README.md" />
+    <None Include="Scripts\SqlMetadataAutomation.LocalDb.ps1" />
+    <None Include="Scripts\SqlMetadataAutomation.ps1" />
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
@@ -142,6 +154,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient">
       <Version>7.0.0-preview3.25342.7</Version>
+    </PackageReference>
+    <PackageReference Include="System.Management.Automation">
+      <Version>5.1.1</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.0.32112.339" ExcludeAssets="runtime" NoWarn="NU1604" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2120" NoWarn="NU1604">

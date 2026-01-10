@@ -30,6 +30,9 @@ namespace data_foundry.Services
         private readonly ChangeDetectionService _changeDetection;
         private readonly MigrationScriptGenerator _scriptGenerator;
 
+        // PowerShell executor (if enabled)
+        private readonly IMigrationExecutor _powerShellExecutor;
+
         // Performance optimization: Track shadow database state (in-memory + persisted)
         private static string _lastShadowMigrationHash = null;
         private static readonly object _shadowDbLock = new object();
@@ -45,6 +48,24 @@ namespace data_foundry.Services
             if (options == null) throw new ArgumentNullException(nameof(options));
             if (environment == null) throw new ArgumentNullException(nameof(environment));
 
+            // Check if PowerShell mode is enabled - if so, create PS executor and skip C# init
+            if (options.UsePowerShellScript)
+            {
+                _powerShellExecutor = new PowerShellMigrationExecutor(options, environment);
+                
+                // Set minimal fields for backwards compatibility
+                var (db, srv) = ServicesHelper.ParseConnectionString(options.LocalDatabaseConnection);
+                _targetDatabase = db;
+                _targetServer = srv;
+                _shadowDatabase = !string.IsNullOrWhiteSpace(options.ShadowDatabaseConnection)
+                    ? ServicesHelper.ParseConnectionString(options.ShadowDatabaseConnection).Database
+                    : $"{_targetDatabase}_Shadow";
+                
+                return; // Skip rest of initialization
+            }
+
+            // Original C# mode initialization...
+            
             // Parse connection string to get database and server
             var (Database, Server) = ServicesHelper.ParseConnectionString(options.LocalDatabaseConnection);
             _targetDatabase = Database;
@@ -247,6 +268,14 @@ namespace data_foundry.Services
         /// </summary>
         public void ExecuteTargetMigrations(bool requireConfirmation = false, Action<string> logger = null)
         {
+            // Delegate to PowerShell if enabled
+            if (_powerShellExecutor != null)
+            {
+                _powerShellExecutor.ExecuteTargetMigrations(requireConfirmation, logger);
+                return;
+            }
+
+            // Original C# implementation
             logger = logger ?? Console.WriteLine;
             var startTime = DateTime.Now;
             ActivityEntry activity = null;
@@ -340,6 +369,14 @@ namespace data_foundry.Services
         /// </summary>
         public List<TableChangeSummary> DetectAndHandleChanges(MigrationAction? action = null, Action<string> logger = null)
         {
+            // Delegate to PowerShell if enabled
+            if (_powerShellExecutor != null)
+            {
+                string actionString = action.HasValue ? action.Value.ToString() : null;
+                return _powerShellExecutor.DetectAndHandleChanges(actionString, logger);
+            }
+
+            // Original C# implementation
             logger = logger ?? Console.WriteLine;
             var startTime = DateTime.Now;
             ActivityEntry activity = null;
@@ -612,6 +649,13 @@ namespace data_foundry.Services
         /// </summary>
         public string GenerateMigrationScriptWithName(List<string> tableNames, string scriptName)
         {
+            // Delegate to PowerShell if enabled
+            if (_powerShellExecutor != null)
+            {
+                return _powerShellExecutor.GenerateMigrationScriptWithName(tableNames, scriptName);
+            }
+
+            // Original C# implementation
             var startTime = DateTime.Now;
             ActivityEntry activity = null;
 
@@ -788,6 +832,13 @@ namespace data_foundry.Services
         /// <returns>List of pending migrations, or empty list if all are applied</returns>
         public List<MigrationInfo> GetPendingMigrationsForTarget()
         {
+            // Delegate to PowerShell if enabled
+            if (_powerShellExecutor != null)
+            {
+                return _powerShellExecutor.GetPendingMigrationsForTarget();
+            }
+
+            // Original C# implementation
             return _scriptManager.GetPendingMigrations(_targetDatabase);
         }
 
@@ -799,6 +850,22 @@ namespace data_foundry.Services
         {
             var pending = GetPendingMigrationsForTarget();
             return pending == null || pending.Count == 0;
+        }
+
+        /// <summary>
+        /// Reverts changes in target database to match shadow database.
+        /// </summary>
+        public void RevertChanges(List<string> tableNames, Action<string> logger = null)
+        {
+            // Delegate to PowerShell if enabled
+            if (_powerShellExecutor != null)
+            {
+                _powerShellExecutor.RevertChanges(tableNames, logger);
+                return;
+            }
+
+            // C# implementation - call DetectAndHandleChanges with Revert action
+            DetectAndHandleChanges(MigrationAction.Revert, logger);
         }
 
         private static void EnsureConfigFileExists(string configPath)

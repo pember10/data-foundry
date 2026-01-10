@@ -36,9 +36,9 @@ namespace data_foundry
             catch (Exception ex)
             {
                 // Log the exception - async void methods can crash the process if unhandled
-                System.Diagnostics.Debug.WriteLine($"Error initializing DataFoundry tool window: {ex}");
+                System.Diagnostics.Debug.WriteLine($"Error metadata automation tool window: {ex}");
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                _ = MessageBox.Show($"Failed to initialize Data Foundry: {ex.Message}",
+                _ = MessageBox.Show($"Failed to initialize WTW Diffusion tool: {ex.Message}",
                     "Initialization Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);

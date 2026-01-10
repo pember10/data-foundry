@@ -322,7 +322,7 @@ namespace data_foundry.Views.Controls
                 ShowSuccessState("Migrations deployed successfully!");
                 
                 MessageBox.Show(
-                    "Migrations executed successfully!\n\nCheck the Output window (Data Foundry pane) for details.",
+                    "Migrations executed successfully!\n\nCheck the Output window (WTW Diffusion pane) for details.",
                     "Migrations Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -681,3 +681,4 @@ namespace data_foundry.Views.Controls
         }
     }
 }
+

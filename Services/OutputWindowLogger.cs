@@ -15,7 +15,7 @@ namespace data_foundry.Services
         private static readonly object _lock = new object();
 
         /// <summary>
-        /// Writes a message to the Data Foundry output pane.
+        /// Writes a message to the WTW Diffusion output pane.
         /// </summary>
         public static void Log(string message)
         {
@@ -37,7 +37,7 @@ namespace data_foundry.Services
         }
 
         /// <summary>
-        /// Writes an error message to the Data Foundry output pane.
+        /// Writes an error message to the WTW Diffusion output pane.
         /// </summary>
         public static void LogError(string message)
         {
@@ -46,7 +46,7 @@ namespace data_foundry.Services
         }
 
         /// <summary>
-        /// Writes a warning message to the Data Foundry output pane.
+        /// Writes a warning message to the WTW Diffusion output pane.
         /// </summary>
         public static void LogWarning(string message)
         {
@@ -55,7 +55,7 @@ namespace data_foundry.Services
         }
 
         /// <summary>
-        /// Clears the Data Foundry output pane.
+        /// Clears the WTW Diffusion output pane.
         /// </summary>
         public static void Clear()
         {
@@ -73,7 +73,7 @@ namespace data_foundry.Services
         }
 
         /// <summary>
-        /// Activates and shows the Data Foundry output pane.
+        /// Activates and shows the WTW Diffusion output pane.
         /// </summary>
         public static void Show()
         {
@@ -115,7 +115,7 @@ namespace data_foundry.Services
                     paneGuid = _dataFoundryPaneGuid;
                     outputWindow.CreatePane(
                         ref paneGuid,
-                        "Data Foundry",
+                        "WTW Diffusion",
                         fInitVisible: 1,
                         fClearWithSolution: 0);
 

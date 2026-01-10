@@ -41,10 +41,16 @@ namespace data_foundry.Options
         public bool VerboseLogging { get; set; }
 
         [DefaultValue("RemoteSigned")]
-        [Category("General")]
+        [Category("Advanced")]
         [DisplayName("Execution Policy")]
         [Description("PowerShell execution policy.")]
         public string ExecutionPolicy { get; set; }
+
+        [DefaultValue(false)]
+        [Category("Advanced")]
+        [DisplayName("Use PowerShell Script")]
+        [Description("Use SqlMetadataAutomation.ps1 for migrations and change detection. When disabled, uses built-in C# orchestration. Requires PowerShell SqlServer module.")]
+        public bool UsePowerShellScript { get; set; }
 
         [TypeConverter(typeof(SqlProjectListConverter))]
         [DefaultValue("Api.Db")]

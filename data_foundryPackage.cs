@@ -29,7 +29,7 @@ namespace data_foundry
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(typeof(DataFoundryToolWindow))]
-    [ProvideOptionPage(typeof(DataFoundryOptions), "Data Foundry", "General", 0, 0, true)]
+    [ProvideOptionPage(typeof(DataFoundryOptions), "WTW Diffusion", "General", 0, 0, true)]
     [Guid(data_foundryPackage.PackageGuidString)]
     public sealed class data_foundryPackage : AsyncPackage
     {

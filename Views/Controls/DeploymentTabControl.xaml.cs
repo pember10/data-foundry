@@ -19,6 +19,9 @@ namespace data_foundry.Views.Controls
             // Subscribe to global processing state changes
             GlobalProcessingStateService.Instance.ProcessingStateChanged += OnProcessingStateChanged;
             
+            // Subscribe to settings changes
+            SettingsChangedService.Instance.SettingsChanged += OnSettingsChanged;
+            
             // Initialize button states
             UpdateButtonStates();
         }
@@ -62,6 +65,17 @@ namespace data_foundry.Views.Controls
         {
             var isProcessing = GlobalProcessingStateService.Instance.IsProcessing;
             SetControlsEnabled(!isProcessing);
+        }
+
+        private void OnSettingsChanged(object sender, EventArgs e)
+        {
+            // Settings changed - could reload defaults or validate inputs
+            ThreadHelper.JoinableTaskFactory.Run(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                // Currently deployment tab doesn't display settings
+                // But we subscribe in case we add that functionality later
+            });
         }
 
         private async void DeployChangesButton_Click(object sender, RoutedEventArgs e)
@@ -133,7 +147,7 @@ namespace data_foundry.Views.Controls
                 // Note: Currently using settings from DataFoundryOptions
                 // The server/database from the UI are ignored for now
                 // You can enhance this to override the settings if needed
-                AppendLog("Note: Using connection from Tools > Options > Data Foundry");
+                AppendLog("Note: Using connection from Tools > Options > WTW Diffusion");
 
                 var orchestrator = SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
 
@@ -270,3 +284,4 @@ namespace data_foundry.Views.Controls
         }
     }
 }
+
