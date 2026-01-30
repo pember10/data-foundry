@@ -122,7 +122,7 @@ SELECT
 
             return new TableChangeSummary
             {
-                Table = table,
+                Table = $"[dbo].[{table}]",  // Format with schema prefix
                 Inserts = Convert.ToInt32(result.Rows[0]["Inserts"]),
                 Updates = Convert.ToInt32(result.Rows[0]["Updates"]),
                 Deletes = Convert.ToInt32(result.Rows[0]["Deletes"])
@@ -147,7 +147,7 @@ SELECT
 
             return new TableChangeSummary
             {
-                Table = table,
+                Table = $"[dbo].[{table}]",  // Format with schema prefix
                 Inserts = difference > 0 ? difference : 0,
                 Updates = 0, // Cannot determine without PK
                 Deletes = difference < 0 ? Math.Abs(difference) : 0

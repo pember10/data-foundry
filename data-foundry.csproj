@@ -85,6 +85,7 @@
     <Compile Include="Services\PowerShellOutputParser.cs" />
     <Compile Include="Services\PowerShellResult.cs" />
     <Compile Include="Services\PowerShellScriptRunner.cs" />
+    <Compile Include="Services\ProjectFileManager.cs" />
     <Compile Include="Services\ServicesHelper.cs" />
     <Compile Include="Services\SettingsChangedService.cs" />
     <Compile Include="Services\SqlMigrationOrchestrator.cs" />
@@ -116,8 +117,13 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
-    <Content Include="Resources\CompareDatabases.png"><CopyToOutputDirectory>Always</CopyToOutputDirectory><IncludeInVSIX>true</IncludeInVSIX></Content>
-    <Content Include="Resources\CompareDatabases.svg"><IncludeInVSIX>true</IncludeInVSIX></Content>
+    <Content Include="Resources\CompareDatabases.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="Resources\CompareDatabases.svg">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <Content Include="Config\tablelist.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>

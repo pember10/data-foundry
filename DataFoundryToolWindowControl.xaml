@@ -28,6 +28,7 @@
         </Style>
         <Style x:Key="PrimaryButtonStyle" TargetType="Button">
             <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Background" Value="#0078D4"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -53,6 +54,7 @@
         </Style>
         <Style x:Key="SecondaryButtonStyle" TargetType="Button">
             <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Background" Value="#F3F3F3"/>
             <Setter Property="Foreground" Value="#2C2C2C"/>
             <Setter Property="BorderBrush" Value="#D1D1D1"/>

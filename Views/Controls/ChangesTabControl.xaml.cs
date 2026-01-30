@@ -680,20 +680,18 @@ namespace data_foundry.Views.Controls
 
         private void ShowReadyState()
         {
-            ReadyIcon.Visibility = Visibility.Visible;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
             CancelButton.Visibility = Visibility.Collapsed;
             
-            LoadingStatusText.Text = "Ready to detect changes...";
+            LoadingStatusText.Text = "Idle...";
             LoadingStatusText.Foreground = new SolidColorBrush(
                 (Color)ColorConverter.ConvertFromString("#666666"));
         }
 
         private void ShowProcessingState(string message)
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Visible;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
@@ -706,7 +704,6 @@ namespace data_foundry.Views.Controls
 
         private void ShowSuccessState(string message = "Completed successfully!")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Visible;
             ErrorIcon.Visibility = Visibility.Collapsed;
@@ -719,7 +716,6 @@ namespace data_foundry.Views.Controls
 
         private void ShowErrorState(string message = "Operation failed")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Visible;

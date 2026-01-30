@@ -29,6 +29,8 @@ namespace data_foundry.Services
         private readonly MigrationScriptManager _scriptManager;
         private readonly ChangeDetectionService _changeDetection;
         private readonly MigrationScriptGenerator _scriptGenerator;
+        private readonly ProjectFileManager _projectFileManager;
+        private readonly string _sqlProjectName; // NEW: Store project name
 
         // PowerShell executor (if enabled)
         private readonly IMigrationExecutor _powerShellExecutor;
@@ -144,6 +146,8 @@ namespace data_foundry.Services
             _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
             _changeDetection = new ChangeDetectionService(_repository);
             _scriptGenerator = new MigrationScriptGenerator(_repository, _scriptManager);
+            _projectFileManager = new ProjectFileManager(environment);
+            _sqlProjectName = options.SqlProject; // NEW: Store project name
         }
 
         public SqlMigrationOrchestrator(
@@ -576,6 +580,9 @@ namespace data_foundry.Services
                             _scriptManager.ExecuteMigrationScript(_targetDatabase, migrationInfo, skipExecution: true);
                         }
                         
+                        // NEW: Add to SQL project
+                        AddScriptToProject(filePath, logger);
+                        
                         if (activity != null)
                         {
                             ActivityHistoryService.Instance.UpdateActivity(
@@ -666,17 +673,14 @@ namespace data_foundry.Services
                     ActivityType.MigrationGeneration,
                     "Migration script generation started");
 
-                // Create shadow database and apply migrations
-                _repository.DropAndRecreateDatabase(_shadowDatabase);
-                _repository.EnsureMigrationLogTable(_shadowDatabase, _migrationLogSchemaPath);
+                // REMOVED: Don't recreate shadow database - it's already up-to-date from change detection!
+                // The shadow database was just created/validated in DetectAndHandleChanges()
+                // _repository.DropAndRecreateDatabase(_shadowDatabase);
+                // _repository.EnsureMigrationLogTable(_shadowDatabase, _migrationLogSchemaPath);
+                // var pendingShadow = _scriptManager.GetPendingMigrations(_shadowDatabase);
+                // foreach (var migration in pendingShadow) { ... }
 
-                var pendingShadow = _scriptManager.GetPendingMigrations(_shadowDatabase);
-                foreach (var migration in pendingShadow)
-                {
-                    _scriptManager.ExecuteMigrationScript(_shadowDatabase, migration);
-                }
-
-                // Generate the migration script
+                // Generate the migration script using existing shadow database
                 var filePath = _scriptGenerator.GenerateMigrationScript(
                     _targetDatabase, 
                     _shadowDatabase, 
@@ -690,6 +694,9 @@ namespace data_foundry.Services
                 {
                     _scriptManager.ExecuteMigrationScript(_targetDatabase, migrationInfo, skipExecution: true);
                 }
+
+                // NEW: Add the generated file to the SQL project
+                AddScriptToProject(filePath, null); // Don't pass logger here since we're not in logging context
 
                 // Update activity with success
                 if (activity != null)
@@ -866,6 +873,70 @@ namespace data_foundry.Services
 
             // C# implementation - call DetectAndHandleChanges with Revert action
             DetectAndHandleChanges(MigrationAction.Revert, logger);
+        }
+
+        /// <summary>
+        /// Adds a generated migration script to the SQL project.
+        /// </summary>
+        private void AddScriptToProject(string scriptPath, Action<string> logger = null)
+        {
+            if (_projectFileManager == null || string.IsNullOrEmpty(_sqlProjectName))
+            {
+                logger?.Invoke("Warning: Could not add script to project - ProjectFileManager not initialized");
+                return;
+            }
+
+            Microsoft.VisualStudio.Shell.ThreadHelper.JoinableTaskFactory.Run(async () =>
+            {
+                try
+                {
+                    await Microsoft.VisualStudio.Shell.ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                    // Get the SQL project path to determine the folder structure
+                    var projectPath = GetSqlProjectPathByName(_sqlProjectName);
+                    if (string.IsNullOrEmpty(projectPath))
+                    {
+                        logger?.Invoke($"Warning: Could not find project '{_sqlProjectName}' to add script");
+                        return;
+                    }
+
+                    // Get the relative folder path
+                    var folderPath = ProjectFileManager.GetRelativeFolderPath(projectPath, scriptPath);
+
+                    // Add the file
+                    if (_projectFileManager.AddFileToProject(_sqlProjectName, scriptPath, folderPath))
+                    {
+                        logger?.Invoke($"? Added script to project: {Path.GetFileName(scriptPath)}");
+                    }
+                    else
+                    {
+                        logger?.Invoke($"Warning: Could not add script to project (check Debug output for details)");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.Invoke($"Warning: Error adding script to project: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"AddScriptToProject error: {ex}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// Gets the full path to a SQL project by name.
+        /// </summary>
+        private string GetSqlProjectPathByName(string projectName)
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+
+            try
+            {
+                var dte = Microsoft.VisualStudio.Shell.Package.GetGlobalService(typeof(DTE)) as DTE;
+                return GetSqlProjectPath(dte, projectName);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static void EnsureConfigFileExists(string configPath)

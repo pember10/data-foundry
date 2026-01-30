@@ -222,20 +222,18 @@ namespace data_foundry.Views.Controls
 
         private void ShowReadyState()
         {
-            ReadyIcon.Visibility = Visibility.Visible;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
             CancelButton.Visibility = Visibility.Collapsed;
             
-            LoadingStatusText.Text = "Ready to deploy...";
+            LoadingStatusText.Text = "Idle...";
             LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
                 (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#666666"));
         }
 
         private void ShowProcessingState(string message)
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Visible;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
@@ -248,7 +246,6 @@ namespace data_foundry.Views.Controls
 
         private void ShowSuccessState(string message = "Deployment completed successfully!")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Visible;
             ErrorIcon.Visibility = Visibility.Collapsed;
@@ -261,7 +258,6 @@ namespace data_foundry.Views.Controls
 
         private void ShowErrorState(string message = "Deployment failed")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Visible;

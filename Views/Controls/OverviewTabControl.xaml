@@ -11,7 +11,6 @@
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="20">
-            <TextBlock Text="Database Project Overview" Style="{DynamicResource SectionHeaderStyle}"/>
             <!-- Project Information -->
             <Border Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="16" Margin="0,0,0,16">
                 <Grid>
@@ -61,54 +60,51 @@
                     <Button Content="Refresh Changes" Style="{DynamicResource PrimaryButtonStyle}" Margin="0,0,8,0" x:Name="RefreshChangesButton"/>
                     <Button Content="Compare Databases" Style="{DynamicResource SecondaryButtonStyle}" Margin="0,0,8,0" x:Name="CompareDatabasesButton"/>
                     <Button Content="Deploy" Style="{DynamicResource SecondaryButtonStyle}" x:Name="DeployButton"/>
-                </StackPanel>
-            </Grid>
-
-            <!-- Loading Indicator -->
-            <StackPanel x:Name="LoadingIndicator" Orientation="Horizontal" Margin="0,0,0,12">
-                <!-- Idle/Ready Icon -->
-                <Grid x:Name="ReadyIcon" Width="20" Height="20" Margin="0,0,8,0">
-                    <Ellipse Width="20" Height="20" Stroke="#9E9E9E" StrokeThickness="2" Fill="Transparent"/>
-                </Grid>
-                
-                <!-- Processing Spinner -->
-                <Grid x:Name="ProcessingIcon" Width="20" Height="20" Margin="0,0,8,0" Visibility="Collapsed">
-                    <Ellipse Width="20" Height="20" Stroke="#2196F3" StrokeThickness="2" Opacity="0.3"/>
-                    <Ellipse Width="20" Height="20" Stroke="#2196F3" StrokeThickness="2" 
+                    
+                    <!-- Loading Indicator -->
+                    <StackPanel x:Name="LoadingIndicator" Orientation="Horizontal" Margin="12,6,0,12">
+                        <!-- Processing Spinner -->
+                        <Grid x:Name="ProcessingIcon" Width="20" Height="20" Margin="0,0,8,0" Visibility="Collapsed">
+                            <Ellipse Width="20" Height="20" Stroke="#2196F3" StrokeThickness="2" Opacity="0.3"/>
+                            <Ellipse Width="20" Height="20" Stroke="#2196F3" StrokeThickness="2" 
                              StrokeDashArray="15,85" StrokeDashCap="Round">
-                        <Ellipse.RenderTransform>
-                            <RotateTransform x:Name="SpinnerRotate" CenterX="10" CenterY="10"/>
-                        </Ellipse.RenderTransform>
-                        <Ellipse.Triggers>
-                            <EventTrigger RoutedEvent="Loaded">
-                                <BeginStoryboard>
-                                    <Storyboard RepeatBehavior="Forever">
-                                        <DoubleAnimation Storyboard.TargetName="SpinnerRotate"
+                                <Ellipse.RenderTransform>
+                                    <RotateTransform x:Name="SpinnerRotate" CenterX="10" CenterY="10"/>
+                                </Ellipse.RenderTransform>
+                                <Ellipse.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <DoubleAnimation Storyboard.TargetName="SpinnerRotate"
                                                        Storyboard.TargetProperty="Angle"
                                                        From="0" To="360" Duration="0:0:1.2"
                                                        AccelerationRatio="0.5" DecelerationRatio="0.5"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </EventTrigger>
-                        </Ellipse.Triggers>
-                    </Ellipse>
-                </Grid>
-                
-                <!-- Success Icon (Checkmark) -->
-                <Grid x:Name="SuccessIcon" Width="20" Height="20" Margin="0,0,8,0" Visibility="Collapsed">
-                    <Ellipse Width="20" Height="20" Fill="#4CAF50"/>
-                    <Path Data="M 6,10 L 9,13 L 14,7" Stroke="White" StrokeThickness="2"/>
-                </Grid>
-                
-                <!-- Error Icon (X) -->
-                <Grid x:Name="ErrorIcon" Width="20" Height="20" Margin="0,0,8,0" Visibility="Collapsed">
-                    <Ellipse Width="20" Height="20" Fill="#F44336"/>
-                    <Path Data="M 7,7 L 13,13 M 13,7 L 7,13" Stroke="White" StrokeThickness="2"/>
-                </Grid>
-                
-                <TextBlock x:Name="LoadingStatusText" Text="Ready for operations..." FontStyle="Italic" Foreground="#666666" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <Button Content="Cancel" x:Name="CancelButton" Padding="8,4" Background="#F44336" Foreground="White" BorderThickness="0" Cursor="Hand" Visibility="Collapsed"/>
-            </StackPanel>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Ellipse.Triggers>
+                            </Ellipse>
+                        </Grid>
+
+                        <!-- Success Icon (Checkmark) -->
+                        <Grid x:Name="SuccessIcon" Width="20" Height="20" Margin="0,0,8,0" Visibility="Collapsed">
+                            <Ellipse Width="20" Height="20" Fill="#4CAF50"/>
+                            <Path Data="M 6,10 L 9,13 L 14,7" Stroke="White" StrokeThickness="2"/>
+                        </Grid>
+
+                        <!-- Error Icon (X) -->
+                        <Grid x:Name="ErrorIcon" Width="20" Height="20" Margin="0,0,8,0" Visibility="Collapsed">
+                            <Ellipse Width="20" Height="20" Fill="#F44336"/>
+                            <Path Data="M 7,7 L 13,13 M 13,7 L 7,13" Stroke="White" StrokeThickness="2"/>
+                        </Grid>
+
+                        <TextBlock x:Name="LoadingStatusText" Text="Idle..." FontStyle="Italic" Foreground="#666666" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Button Content="Cancel" x:Name="CancelButton" Padding="8,4" Background="#F44336" Foreground="White" BorderThickness="0" Cursor="Hand" Visibility="Collapsed"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            
 
             <!-- Recent Activity -->
             <TextBlock Text="Recent Activity" Style="{DynamicResource SectionHeaderStyle}" Margin="0,16,0,12"/>
