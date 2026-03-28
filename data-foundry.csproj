@@ -128,14 +128,18 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <None Include="Docs\Architecture_Separation_Plan.md" />
     <None Include="Docs\Assembly_Binding_Redirects.md" />
+    <None Include="Docs\Development_Session_Summary.md" />
     <None Include="Docs\Global_Processing_State.md" />
     <None Include="Docs\Next_Steps_Checklist.md" />
     <None Include="Docs\Performance_Optimization_Plan.md" />
     <None Include="Docs\Performance_Optimization_Summary.md" />
     <None Include="Docs\PowerShell_Integration_Implementation.md" />
     <None Include="Docs\Quick_Start_Guide.md" />
+    <None Include="Docs\SQL_Identifier_Bug_Fix.md" />
     <None Include="Docs\UI_Integration_Complete.md" />
+    <None Include="migrate-files.ps1" />
     <None Include="README.md" />
     <None Include="Scripts\SqlMetadataAutomation.LocalDb.ps1" />
     <None Include="Scripts\SqlMetadataAutomation.ps1" />
