@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using data_foundry.Models;
+using WTW.Diffusion.Core.Models;
+using WTW.Diffusion.Core.Services.Migration;
 using data_foundry.Options;
 using EnvDTE;
 

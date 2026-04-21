@@ -1,7 +1,9 @@
-using data_foundry.Models;
+using WTW.Diffusion.Core.Models;
+using WTW.Diffusion.Core.Config;
+using WTW.Diffusion.Core.Helpers;
+using WTW.Diffusion.Core.Services.Database;
+using WTW.Diffusion.Core.Services.Migration;
 using data_foundry.Options;
-using data_foundry.Helpers;
-using data_foundry.Config;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
@@ -9,7 +11,7 @@ using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using EnvDTE;
-using static data_foundry.Constants;
+using WTW.Diffusion.Core;
 
 namespace data_foundry.Services
 {
@@ -25,10 +27,10 @@ namespace data_foundry.Services
         private readonly string _outputMigrationDir;
         private readonly string _migrationLogSchemaPath;
 
-        private readonly SqlMigrationRepository _repository;
-        private readonly MigrationScriptManager _scriptManager;
-        private readonly ChangeDetectionService _changeDetection;
-        private readonly MigrationScriptGenerator _scriptGenerator;
+        private readonly WTW.Diffusion.Core.Services.Database.SqlMigrationRepository _repository;
+        private readonly WTW.Diffusion.Core.Services.Migration.MigrationScriptManager _scriptManager;
+        private readonly WTW.Diffusion.Core.Services.Database.ChangeDetectionService _changeDetection;
+        private readonly WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator _scriptGenerator;
         private readonly ProjectFileManager _projectFileManager;
         private readonly string _sqlProjectName; // NEW: Store project name
 
@@ -97,7 +99,7 @@ namespace data_foundry.Services
                 throw new InvalidOperationException($"Invalid SQL Project path: {sqlProjectPath}");
             }
 
-            var migrationsPath = PathHelper.SafeCombine(sqlProjectDir, options.MigrationsFolder ?? Folders.Migrations);
+            var migrationsPath = PathHelper.SafeCombine(sqlProjectDir, options.MigrationsFolder ?? WTW.Diffusion.Core.Constants.Folders.Migrations);
             if (string.IsNullOrEmpty(migrationsPath))
             {
                 throw new InvalidOperationException($"Invalid migrations path combination: {sqlProjectDir} + {options.MigrationsFolder}");
@@ -107,7 +109,7 @@ namespace data_foundry.Services
 
             // Config path - use extension installation directory with fallback
             var installDir = PathHelper.GetExtensionInstallDirectory(typeof(SqlMigrationOrchestrator));
-            var configDir = PathHelper.SafeCombine(installDir, Folders.Config);
+            var configDir = PathHelper.SafeCombine(installDir, WTW.Diffusion.Core.Constants.Folders.Config);
             
             if (string.IsNullOrEmpty(configDir) || !PathHelper.EnsureDirectoryExists(configDir))
             {
@@ -139,13 +141,13 @@ namespace data_foundry.Services
             }
 
             // Initialize services
-            var authProvider = new AzureSqlAuthenticationProvider();
+            var authProvider = new WTW.Diffusion.Core.Services.Database.AzureSqlAuthenticationProvider();
             var accessToken = authProvider.GetAccessToken(_targetServer);
 
-            _repository = new SqlMigrationRepository(_targetServer, accessToken);
-            _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
-            _changeDetection = new ChangeDetectionService(_repository);
-            _scriptGenerator = new MigrationScriptGenerator(_repository, _scriptManager);
+            _repository = new WTW.Diffusion.Core.Services.Database.SqlMigrationRepository(_targetServer, accessToken);
+            _scriptManager = new WTW.Diffusion.Core.Services.Migration.MigrationScriptManager(_repository, migrationsPath);
+            _changeDetection = new WTW.Diffusion.Core.Services.Database.ChangeDetectionService(_repository);
+            _scriptGenerator = new WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator(_repository, _scriptManager);
             _projectFileManager = new ProjectFileManager(environment);
             _sqlProjectName = options.SqlProject; // NEW: Store project name
         }
@@ -167,8 +169,8 @@ namespace data_foundry.Services
             if (string.IsNullOrEmpty(configPath))
             {
                 var installDir = PathHelper.GetExtensionInstallDirectory(typeof(SqlMigrationOrchestrator));
-                var configDir = PathHelper.SafeCombine(installDir, Folders.Config);
-                
+                var configDir = PathHelper.SafeCombine(installDir, WTW.Diffusion.Core.Constants.Folders.Config);
+
                 if (!string.IsNullOrEmpty(configDir))
                 {
                     PathHelper.EnsureDirectoryExists(configDir);
@@ -195,8 +197,8 @@ namespace data_foundry.Services
             if (string.IsNullOrEmpty(migrationLogSchemaPath))
             {
                 var installDir = PathHelper.GetExtensionInstallDirectory(typeof(SqlMigrationOrchestrator));
-                var configDir = PathHelper.SafeCombine(installDir, Folders.Config);
-                
+                var configDir = PathHelper.SafeCombine(installDir, WTW.Diffusion.Core.Constants.Folders.Config);
+
                 if (!string.IsNullOrEmpty(configDir))
                 {
                     PathHelper.EnsureDirectoryExists(configDir);
@@ -234,13 +236,13 @@ namespace data_foundry.Services
             }
 
             // Initialize services
-            var authProvider = new AzureSqlAuthenticationProvider();
+            var authProvider = new WTW.Diffusion.Core.Services.Database.AzureSqlAuthenticationProvider();
             var accessToken = authProvider.GetAccessToken(_targetServer);
 
-            _repository = new SqlMigrationRepository(_targetServer, accessToken);
-            _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
-            _changeDetection = new ChangeDetectionService(_repository);
-            _scriptGenerator = new MigrationScriptGenerator(_repository, _scriptManager);
+            _repository = new WTW.Diffusion.Core.Services.Database.SqlMigrationRepository(_targetServer, accessToken);
+            _scriptManager = new WTW.Diffusion.Core.Services.Migration.MigrationScriptManager(_repository, migrationsPath);
+            _changeDetection = new WTW.Diffusion.Core.Services.Database.ChangeDetectionService(_repository);
+            _scriptGenerator = new WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator(_repository, _scriptManager);
         }
 
         private static string GetSqlProjectPath(DTE environment, string projectName)
@@ -292,7 +294,7 @@ namespace data_foundry.Services
                     "Deployment started");
 
                 // Ensure database exists (skip for Azure SQL)
-                if (!_targetServer.Contains(Constants.Azure.AzureSqlDomain))
+                if (!_targetServer.Contains(WTW.Diffusion.Core.Constants.Azure.AzureSqlDomain))
                 {
                     logger("Ensuring target database");
                     _repository.CreateDatabaseIfMissing(_targetDatabase);

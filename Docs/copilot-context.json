@@ -1,0 +1,235 @@
+{
+  "project": {
+    "name": "WTW Diffusion",
+    "formerly": "Data Foundry",
+    "repository": "https://github.com/pember10/data-foundry",
+    "branch": "develop",
+    "solutionPath": "C:\\source\\data-foundry",
+    "description": "A Visual Studio extension (VSIX) that detects data changes between a target SQL Server database and a shadow database, generates migration scripts, and automates deployment. Designed for use with SQL Server Data Projects (.sqlproj)."
+  },
+  "projects": [
+    {
+      "name": "data-foundry",
+      "type": "VSIX",
+      "projectFile": "data-foundry.csproj",
+      "targetFramework": "net472",
+      "description": "Visual Studio extension. Contains all VS SDK, DTE, and WPF UI code.",
+      "keyFiles": {
+        "entryPoint": "data_foundryPackage.cs",
+        "mainOrchestrator": "Services/SqlMigrationOrchestrator.cs",
+        "factory": "Services/SqlMigrationOrchestratorFactory.cs",
+        "settings": "Options/DataFoundryOptions.cs",
+        "toolWindow": "DataFoundryToolWindow.cs",
+        "mainControl": "DataFoundryToolWindowControl.xaml.cs"
+      },
+      "vsixServices": [
+        "Services/ActivityHistoryService.cs",
+        "Services/ChangeDetectionResultsService.cs",
+        "Services/CSharpMigrationExecutor.cs",
+        "Services/DatabaseSyncStatusService.cs",
+        "Services/GlobalProcessingStateService.cs",
+        "Services/OutputWindowLogger.cs",
+        "Services/PowerShellMigrationExecutor.cs",
+        "Services/PowerShellOrchestratorWrapper.cs",
+        "Services/PowerShellScriptRunner.cs",
+        "Services/ProjectFileManager.cs",
+        "Services/ServicesHelper.cs",
+        "Services/SettingsChangedService.cs",
+        "Services/SqlMigrationOrchestrator.cs",
+        "Services/SqlMigrationOrchestratorFactory.cs",
+        "Services/TrackedTablesManager.cs"
+      ],
+      "views": [
+        "Views/Controls/ChangesTabControl.xaml(.cs)",
+        "Views/Controls/DeploymentTabControl.xaml(.cs)",
+        "Views/Controls/OverviewTabControl.xaml(.cs)",
+        "Views/Controls/SettingsTabControl.xaml(.cs)",
+        "Views/Controls/TabbedContentControl.xaml(.cs)",
+        "Views/Controls/NoSqlProjectMessageControl.xaml(.cs)"
+      ],
+      "notes": [
+        "Uses System.Data.SqlClient (not Microsoft.Data.SqlClient) in orchestrator for legacy compat.",
+        "AzureSqlAuthenticationProvider, SqlMigrationRepository, ChangeDetectionService, MigrationScriptManager, MigrationScriptGenerator are now resolved from WTW.Diffusion.Core via project reference.",
+        "All Core service types are fully qualified in SqlMigrationOrchestrator to avoid VS IDE ambiguity with deleted ghost files.",
+        "IMigrationExecutor in VSIX is a thin interface that extends WTW.Diffusion.Core.Services.Migration.IMigrationExecutor.",
+        "PowerShellScriptRunner stays in VSIX because System.Management.Automation is Windows-only SDK."
+      ]
+    },
+    {
+      "name": "WTW.Diffusion.Core",
+      "type": "ClassLibrary",
+      "projectFile": "WTW.Diffusion.Core/WTW.Diffusion.Core.csproj",
+      "targetFramework": "netstandard2.0",
+      "description": "Platform-independent business logic. No VS SDK, no DTE, no WPF dependencies. Enables future CLI/ADO pipeline tooling.",
+      "packages": [
+        "Microsoft.Data.SqlClient 5.1.5",
+        "Newtonsoft.Json 13.0.3",
+        "Microsoft.Identity.Client 4.78.0",
+        "Azure.Identity 1.13.2",
+        "Azure.Core 1.44.1"
+      ],
+      "structure": {
+        "Abstractions": [
+          "ILogger.cs",
+          "IProjectManager.cs",
+          "IConfigurationProvider.cs"
+        ],
+        "Config": [
+          "DataFoundryConfig.cs",
+          "TableListConfig.cs"
+        ],
+        "Constants.cs": "Global constants. NOTE: causes ambiguity with EnvDTE.Constants in VSIX — always use fully-qualified WTW.Diffusion.Core.Constants in VSIX files.",
+        "Helpers": [
+          "PathHelper.cs"
+        ],
+        "Models": [
+          "ActivityEntry.cs",
+          "DatabaseChange.cs",
+          "MigrationAction.cs",
+          "MigrationInfo.cs",
+          "ShadowDatabaseCacheInfo.cs",
+          "TableChangeSummary.cs"
+        ],
+        "Services/Database": [
+          "AzureSqlAuthenticationProvider.cs",
+          "ChangeDetectionService.cs",
+          "SqlMigrationRepository.cs"
+        ],
+        "Services/Migration": [
+          "IMigrationExecutor.cs",
+          "MigrationScriptGenerator.cs",
+          "MigrationScriptManager.cs",
+          "PowerShellOutputParser.cs",
+          "PowerShellResult.cs"
+        ]
+      },
+      "notes": [
+        "Uses Microsoft.Data.SqlClient (not System.Data.SqlClient).",
+        "DataTable.AsEnumerable() is not available in netstandard2.0 — use Rows.Cast<DataRow>() instead.",
+        "DataTableExtensions (AsEnumerable) requires System.Data.DataSetExtensions which is not available in netstandard2.0.",
+        "static using WTW.Diffusion.Core.Constants must NOT be used in VSIX files — conflicts with EnvDTE.Constants type."
+      ]
+    }
+  ],
+  "architecture": {
+    "pattern": "Core/Shell separation",
+    "coreTargets": "netstandard2.0 for cross-platform reuse",
+    "vsixTargets": "net472 for Visual Studio hosting",
+    "futurePlanned": {
+      "name": "WTW.Diffusion.Cli",
+      "targetFramework": "net6.0 or netcoreapp3.1",
+      "purpose": "Command-line tool for Azure DevOps pipeline integration",
+      "status": "Not yet created"
+    },
+    "separationRules": {
+      "goesToCore": [
+        "SQL database operations",
+        "Migration script management",
+        "Change detection logic",
+        "Data models",
+        "Configuration models",
+        "Azure authentication",
+        "Path utilities"
+      ],
+      "staysInVSIX": [
+        "Anything using EnvDTE or DTE",
+        "Anything using Microsoft.VisualStudio.Shell",
+        "WPF/XAML controls and code-behind",
+        "OutputWindowLogger",
+        "ProjectFileManager (uses DTE ProjectItems API)",
+        "PowerShellScriptRunner (uses System.Management.Automation Windows SDK)",
+        "ActivityHistoryService (uses System.Windows.Application dispatcher and VS ThreadHelper)",
+        "SettingsChangedService, DatabaseSyncStatusService, GlobalProcessingStateService"
+      ]
+    }
+  },
+  "bugsFixed": [
+    {
+      "description": "SQL identifier bracket escaping",
+      "files": [
+        "Services/SqlMigrationRepository.cs",
+        "Services/ChangeDetectionService.cs",
+        "Services/MigrationScriptGenerator.cs"
+      ],
+      "fix": "QuoteSqlIdentifier/QuoteIdentifier now escapes ] by doubling it (]]) per SQL Server standard instead of throwing. ValidateIdentifier now strips brackets before regex validation."
+    },
+    {
+      "description": "Case-sensitive GUID comparison for DTE folder detection",
+      "file": "Services/ProjectFileManager.cs",
+      "fix": "Use StringComparison.OrdinalIgnoreCase when comparing vsProjectItemKindPhysicalFolder GUIDs."
+    }
+  ],
+  "knownPatterns": {
+    "shadowDatabase": {
+      "description": "A shadow database is created from all migration scripts and used as the baseline for change detection. Smart caching avoids recreation unless migration files change.",
+      "cacheMechanism": "SHA256 hash of all .sql filenames + LastWriteTimeUtc ticks. Cached in-memory and persisted to shadow-cache.json.",
+      "location": "SqlMigrationOrchestrator.cs — DetectAndHandleChanges()"
+    },
+    "dualExecutionMode": {
+      "description": "Operations can run via C# (direct SQL) or PowerShell (SqlMetadataAutomation.ps1). Toggled by DataFoundryOptions.UsePowerShellScript.",
+      "interface": "IMigrationExecutor",
+      "implementations": [
+        "CSharpMigrationExecutor (wraps SqlMigrationOrchestrator)",
+        "PowerShellMigrationExecutor (wraps PowerShellScriptRunner)"
+      ]
+    },
+    "migrationLogTable": {
+      "name": "__MigrationLog",
+      "schema": "dbo",
+      "schemaFile": "Config/MigrationLogTableDefinition.sql",
+      "idFormat": "GUID embedded in script as comment: -- <Migration ID=\"{guid}\" />"
+    },
+    "trackedTables": {
+      "configFile": "Config/tablelist.json",
+      "editableVia": "Tools > Options > WTW Diffusion > General > Tracked Tables"
+    }
+  },
+  "importantConventions": [
+    "VSIX files must use WTW.Diffusion.Core.Constants.Folders.X and WTW.Diffusion.Core.Constants.Azure.X (fully qualified) — never bare 'Constants.' or 'Folders.' due to EnvDTE.Constants ambiguity.",
+    "VSIX files must use WTW.Diffusion.Core.Config.DataFoundryConfig and WTW.Diffusion.Core.Config.TableListConfig (fully qualified) — bare 'Config.' conflicts with VS tooling namespaces.",
+    "SqlMigrationOrchestrator field types and constructor instantiations use fully-qualified Core namespace paths to prevent IDE ghost-file ambiguity.",
+    "All SQL identifiers (database, table, column names) must be quoted via QuoteIdentifier/QuoteSqlIdentifier which escapes ] as ]] per SQL Server standard.",
+    "MigrationScriptGenerator.FormatSqlLiteral handles null, DBNull, DateTime, bool, byte[], string, Guid, IFormattable — string values escape single quotes by doubling them."
+  ],
+  "buildNotes": [
+    "VSIX project must be built via Visual Studio — direct MSBuild.exe invocation fails with MC6000 (missing WindowsBase) due to WPF/WinFx targets requiring the correct 32/64-bit toolchain selection.",
+    "WTW.Diffusion.Core can be built with 'dotnet build' independently.",
+    "If CS2001 ghost errors appear for deleted VSIX service files, delete the obj\\ folder and rebuild — these are stale IDE cache artifacts from open editor tabs.",
+    "If CS1503 type mismatch errors appear involving Core types in SqlMigrationOrchestrator, use fully-qualified type names — the VS resolver can confuse ghost in-memory files with Core types."
+  ],
+  "pendingWork": [
+    {
+      "priority": "Medium",
+      "task": "Create WTW.Diffusion.Cli project",
+      "description": "Console app targeting net6.0, referencing WTW.Diffusion.Core. Implement ConsoleLogger (ILogger) and FileConfigurationProvider (IConfigurationProvider). Commands: detect-changes, generate-script, deploy.",
+      "blockers": "None — Core library is ready."
+    },
+    {
+      "priority": "Medium",
+      "task": "Implement ILogger, IConfigurationProvider, IProjectManager adapters in VSIX",
+      "description": "Create VsLogger (wraps OutputWindowLogger), VsConfigurationProvider (wraps DataFoundryOptions), VsProjectManager (wraps ProjectFileManager) implementing the Core abstractions.",
+      "blockers": "None — interfaces already defined in Core/Abstractions/."
+    },
+    {
+      "priority": "Low",
+      "task": "Wire SqlMigrationOrchestrator to use ILogger instead of Action<string>",
+      "description": "Replace Action<string> logger parameter pattern with ILogger abstraction throughout Core services.",
+      "blockers": "Requires adapter implementations first."
+    },
+    {
+      "priority": "Low",
+      "task": "UI/UX polish",
+      "description": "Spacing, alignment, button sizing, grid column auto-sizing."
+    },
+    {
+      "priority": "Low",
+      "task": "CancellationToken support",
+      "description": "Pass CancellationToken through all async operations in orchestrator and executors."
+    },
+    {
+      "priority": "Low",
+      "task": "Error handling improvements",
+      "description": "User-friendly messages for SQL connection failures, missing PowerShell SqlServer module, retry logic for transient Azure SQL errors."
+    }
+  ]
+}

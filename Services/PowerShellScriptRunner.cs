@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Management.Automation;
 using System.Threading.Tasks;
+using WTW.Diffusion.Core.Services.Migration;
+using WTW.Diffusion.Core.Services.Migration;
 
 namespace data_foundry.Services
 {

@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using data_foundry.Helpers;
-using data_foundry.Models;
+using WTW.Diffusion.Core.Helpers;
+using WTW.Diffusion.Core.Models;
+using WTW.Diffusion.Core.Services.Migration;
 using data_foundry.Options;
 using EnvDTE;
 
@@ -190,7 +191,7 @@ namespace data_foundry.Services
         private string GetTableListConfigPath()
         {
             var installDir = PathHelper.GetExtensionInstallDirectory(typeof(PowerShellMigrationExecutor));
-            return Path.Combine(installDir, Constants.Folders.Config, "tablelist.json");
+            return Path.Combine(installDir, WTW.Diffusion.Core.Constants.Folders.Config, "tablelist.json");
         }
     }
 }

@@ -141,3 +141,5 @@ vite.config.ts.timestamp-*
 .vs/
 bin/*
 obj/*
+/WTW.Diffusion.Core/bin/*
+/WTW.Diffusion.Core/obj/*

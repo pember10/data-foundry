@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using data_foundry.Models;
+using WTW.Diffusion.Core.Models;
 using data_foundry.Services;
 using Microsoft.VisualStudio.Shell;
 

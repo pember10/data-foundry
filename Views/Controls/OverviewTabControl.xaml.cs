@@ -6,7 +6,7 @@ using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using data_foundry.Options;
 using data_foundry.Services;
-using data_foundry.Models;
+using WTW.Diffusion.Core.Models;
 using System.Threading.Tasks;
 
 namespace data_foundry.Views.Controls
