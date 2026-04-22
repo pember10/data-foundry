@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
+using Microsoft.VisualStudio.Shell;
 using WTW.Diffusion.Core.Helpers;
 using WTW.Diffusion.Core.Models;
 using WTW.Diffusion.Core.Services.Migration;
@@ -20,17 +22,20 @@ namespace data_foundry.Services
 
         public PowerShellMigrationExecutor(DataFoundryOptions options, DTE environment)
         {
-            if (options == null) throw new ArgumentNullException(nameof(options));
-            if (environment == null) throw new ArgumentNullException(nameof(environment));
-
-            _options = options;
-            _environment = environment;
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+            _environment = environment ?? throw new ArgumentNullException(nameof(environment));
 
             var scriptPath = GetPowerShellScriptPath();
             _psRunner = new PowerShellScriptRunner(scriptPath);
         }
 
         public void ExecuteTargetMigrations(bool requireConfirmation, Action<string> logger)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ThreadHelper.JoinableTaskFactory.Run(() => ExecuteTargetMigrationsAsync(requireConfirmation, logger));
+        }
+
+        public async Task ExecuteTargetMigrationsAsync(bool requireConfirmation, Action<string> logger)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -43,7 +48,7 @@ namespace data_foundry.Services
                 { "DetectChanges", false }
             };
 
-            var result = _psRunner.ExecuteAsync(parameters, logger).Result;
+            var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -54,6 +59,12 @@ namespace data_foundry.Services
         }
 
         public List<TableChangeSummary> DetectAndHandleChanges(string action, Action<string> logger)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            return ThreadHelper.JoinableTaskFactory.Run(() => DetectAndHandleChangesAsync(action, logger));
+        }
+
+        public async Task<List<TableChangeSummary>> DetectAndHandleChangesAsync(string action, Action<string> logger)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -71,7 +82,7 @@ namespace data_foundry.Services
                 parameters["Action"] = action;
             }
 
-            var result = _psRunner.ExecuteAsync(parameters, logger).Result;
+            var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -85,6 +96,12 @@ namespace data_foundry.Services
 
         public List<MigrationInfo> GetPendingMigrationsForTarget()
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            return ThreadHelper.JoinableTaskFactory.Run(() => GetPendingMigrationsForTargetAsync());
+        }
+
+        public async Task<List<MigrationInfo>> GetPendingMigrationsForTargetAsync()
+        {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
             // Run script without DetectChanges to just check pending migrations
@@ -95,7 +112,7 @@ namespace data_foundry.Services
                 { "MigrationsPath", GetMigrationsPath() }
             };
 
-            var result = _psRunner.ExecuteAsync(parameters, null).Result;
+            var result = await _psRunner.ExecuteAsync(parameters, null).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -107,6 +124,12 @@ namespace data_foundry.Services
         }
 
         public string GenerateMigrationScriptWithName(List<string> tableNames, string scriptName)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            return ThreadHelper.JoinableTaskFactory.Run(() => GenerateMigrationScriptWithNameAsync(tableNames, scriptName));
+        }
+
+        public async Task<string> GenerateMigrationScriptWithNameAsync(List<string> tableNames, string scriptName)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -121,7 +144,7 @@ namespace data_foundry.Services
                 { "ConfigPath", GetTableListConfigPath() }
             };
 
-            var result = _psRunner.ExecuteAsync(parameters, null).Result;
+            var result = await _psRunner.ExecuteAsync(parameters, null).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -135,6 +158,12 @@ namespace data_foundry.Services
 
         public void RevertChanges(List<string> tableNames, Action<string> logger)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ThreadHelper.JoinableTaskFactory.Run(() => RevertChangesAsync(tableNames, logger));
+        }
+
+        public async Task RevertChangesAsync(List<string> tableNames, Action<string> logger)
+        {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
             var parameters = new Dictionary<string, object>
@@ -147,7 +176,7 @@ namespace data_foundry.Services
                 { "ConfigPath", GetTableListConfigPath() }
             };
 
-            var result = _psRunner.ExecuteAsync(parameters, logger).Result;
+            var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
 
             if (!result.Success)
             {

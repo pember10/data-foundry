@@ -97,10 +97,16 @@ namespace WTW.Diffusion.Core.Services.Migration
         public void ExecuteMigrationScript(string database, MigrationInfo migrationInfo, bool skipExecution = false)
         {
             var displayName = GetRelativeFilename(migrationInfo.FullPath);
-            if (!skipExecution)
-                _repository.ExecuteSqlScript(database, migrationInfo.Content);
             var checksum = GetFileChecksum(migrationInfo.FullPath);
-            _repository.LogMigrationExecution(database, migrationInfo.Id, displayName, checksum);
+
+            if (skipExecution)
+            {
+                _repository.LogMigrationExecution(database, migrationInfo.Id, displayName, checksum);
+            }
+            else
+            {
+                _repository.ExecuteScriptAndLog(database, migrationInfo.Content, migrationInfo.Id, displayName, checksum);
+            }
         }
     }
 }

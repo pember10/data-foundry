@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
@@ -60,6 +60,9 @@
     <Compile Include="Options\SqlProjectListConverter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Services\ActivityHistoryService.cs" />
+    <Compile Include="Services\Adapters\VsConfigurationProvider.cs" />
+    <Compile Include="Services\Adapters\VsLogger.cs" />
+    <Compile Include="Services\Adapters\VsProjectManager.cs" />
     <Compile Include="Services\ChangeDetectionResultsService.cs" />
     <Compile Include="Services\CSharpMigrationExecutor.cs" />
     <Compile Include="Services\DatabaseSyncStatusService.cs" />
@@ -69,6 +72,7 @@
     <Compile Include="Services\PowerShellOrchestratorWrapper.cs" />
     <Compile Include="Services\PowerShellScriptRunner.cs" />
     <Compile Include="Services\ProjectFileManager.cs" />
+    <Compile Include="Services\ProjectIntegrationService.cs" />
     <Compile Include="Services\ServicesHelper.cs" />
     <Compile Include="Services\SettingsChangedService.cs" />
     <Compile Include="Services\SqlMigrationOrchestrator.cs" />
@@ -110,6 +114,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <None Include=".github\copilot-instructions.md" />
     <None Include="Docs\Architecture_Separation_Plan.md" />
     <None Include="Docs\Assembly_Binding_Redirects.md" />
     <None Include="Docs\copilot-context.json" />

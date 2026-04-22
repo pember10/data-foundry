@@ -48,6 +48,18 @@ namespace data_foundry
                     return LoadFromExtensionDirectory("System.Text.Json.dll");
                 }
 
+                // Handle Azure.Identity version redirects
+                if (assemblyName.Name == "Azure.Identity")
+                {
+                    return LoadFromExtensionDirectory("Azure.Identity.dll");
+                }
+
+                // Handle Azure.Identity version redirects
+                if (assemblyName.Name == "Azure.Identity")
+                {
+                    return LoadFromExtensionDirectory("Azure.Identity.dll");
+                }
+
                 // Handle Microsoft.Identity.Client version redirects
                 if (assemblyName.Name == "Microsoft.Identity.Client")
                 {

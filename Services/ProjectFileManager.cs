@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.IO;
+using System.Linq;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 
@@ -127,7 +129,6 @@ namespace data_foundry.Services
                 {
                     // Some project types throw NotImplementedException
                     System.Diagnostics.Debug.WriteLine($"Error accessing project: {ex.Message}");
-                    continue;
                 }
             }
 
@@ -140,7 +141,8 @@ namespace data_foundry.Services
         /// <param name="project">The project</param>
         /// <param name="folderPath">Folder path (e.g., "Migrations\222_Sprint")</param>
         /// <returns>ProjectItems collection for the folder</returns>
-        private ProjectItems NavigateToFolder(Project project, string folderPath)
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "ProjectItems is a COM interface with no empty instantiation; null is the correct sentinel and is handled by the caller.")]
+        private static ProjectItems NavigateToFolder(Project project, string folderPath)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -156,34 +158,7 @@ namespace data_foundry.Services
             foreach (var part in parts)
             {
                 System.Diagnostics.Debug.WriteLine($"[ProjectFileManager] Looking for folder: {part}");
-                ProjectItem folder = null;
-
-                // Try to find existing folder
-                int itemIndex = 0;
-                foreach (ProjectItem item in current)
-                {
-                    itemIndex++;
-                    try
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[ProjectFileManager]   Item {itemIndex}: Name='{item.Name}', Kind='{item.Kind}'");
-                        
-                        // Check if this is a physical folder by comparing the Kind GUID
-                        // vsProjectItemKindPhysicalFolder = "{6BB5F8EF-4483-11D3-8BCF-00C04F8EC28C}"
-                        bool isFolder = string.Equals(item.Kind, "{6BB5F8EF-4483-11D3-8BCF-00C04F8EC28C}", StringComparison.OrdinalIgnoreCase) ||
-                                       string.Equals(item.Kind, EnvDTE.Constants.vsProjectItemKindPhysicalFolder, StringComparison.OrdinalIgnoreCase);
-                        
-                        if (isFolder && string.Equals(item.Name, part, StringComparison.OrdinalIgnoreCase))
-                        {
-                            folder = item;
-                            System.Diagnostics.Debug.WriteLine($"[ProjectFileManager]   ? Found matching folder: {part}");
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[ProjectFileManager]   Error reading item {itemIndex}: {ex.Message}");
-                    }
-                }
+                ProjectItem folder = FindFolderInProjectItems(current, part);
 
                 // If folder doesn't exist, try to create it
                 if (folder == null)
@@ -193,14 +168,13 @@ namespace data_foundry.Services
                     
                     try
                     {
-                        // Try to add the folder - this should work if it exists on disk
                         folder = current.AddFolder(part);
-                        System.Diagnostics.Debug.WriteLine($"[ProjectFileManager] ? Successfully added folder: {part}");
+                        System.Diagnostics.Debug.WriteLine($"[ProjectFileManager] - Successfully added folder: {part}");
                     }
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"[ProjectFileManager] ERROR: Failed to add folder '{part}': {ex.Message}");
-                        return null;
+                        return null; // NOSONAR - ProjectItems is a COM interface; null is the correct sentinel for "folder not found" and is handled by the caller
                     }
                 }
 
@@ -211,9 +185,55 @@ namespace data_foundry.Services
         }
 
         /// <summary>
+        /// Finds a folder by name in the given ProjectItems collection.
+        /// </summary>
+        /// <param name="items">The ProjectItems collection to search.</param>
+        /// <param name="folderName">The name of the folder to find.</param>
+        /// <returns>The ProjectItem representing the folder, or null if not found.</returns>
+        private static ProjectItem FindFolderInProjectItems(ProjectItems items, string folderName)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (items == null || items.Count == 0)
+            {
+                // S1168: Return an empty collection instead of null.
+                // But this method returns ProjectItem, not a collection, so returning null is correct here.
+                // No change needed for this method.
+                return null;
+            }
+
+            for (var itemIndex = 0; itemIndex < items.Count; itemIndex++)
+            {
+                var item = items.Item(itemIndex + 1); // DTE collections are 1-based
+
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ProjectFileManager]   Item {itemIndex}: Name='{item.Name}', Kind='{item.Kind}'");
+
+                    // Check if this is a physical folder by comparing the Kind GUID
+                    // vsProjectItemKindPhysicalFolder = "{6BB5F8EF-4483-11D3-8BCF-00C04F8EC28C}"
+                    bool isFolder = string.Equals(item.Kind, "{6BB5F8EF-4483-11D3-8BCF-00C04F8EC28C}", StringComparison.OrdinalIgnoreCase) ||
+                                   string.Equals(item.Kind, EnvDTE.Constants.vsProjectItemKindPhysicalFolder, StringComparison.OrdinalIgnoreCase);
+
+                    if (isFolder && string.Equals(item.Name, folderName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[ProjectFileManager]   - Found matching folder: {folderName}");
+                        return item;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ProjectFileManager]   Error reading item {itemIndex}: {ex.Message}");
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Checks if a file already exists in the project items collection.
         /// </summary>
-        private bool FileExistsInProjectItems(ProjectItems items, string fileName)
+        private static bool FileExistsInProjectItems(ProjectItems items, string fileName)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -229,14 +249,37 @@ namespace data_foundry.Services
                         return true;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Some items may throw exceptions when accessing Name
-                    continue;
+                    System.Diagnostics.Debug.WriteLine($"[ProjectFileManager]   Error reading item {item.Name}: {ex.Message}");
                 }
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Gets the full path to a project file by project name.
+        /// </summary>
+        /// <param name="projectName">Name of the project</param>
+        /// <returns>Full path to the project file, or null if not found</returns>
+        public string GetProjectPath(string projectName)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            var project = FindProject(projectName);
+            if (project == null)
+                return null;
+
+            try
+            {
+                return project.FullName;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>

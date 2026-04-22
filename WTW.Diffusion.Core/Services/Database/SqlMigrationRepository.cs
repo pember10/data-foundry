@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
@@ -12,16 +13,9 @@ namespace WTW.Diffusion.Core.Services.Database
     /// <summary>
     /// Handles all direct SQL Server database operations for migrations.
     /// </summary>
-    public class SqlMigrationRepository
+    public class SqlMigrationRepository(string targetServer, string accessToken = null)
     {
-        private readonly string _targetServer;
-        private readonly string _accessToken;
-
-        public SqlMigrationRepository(string targetServer, string accessToken = null)
-        {
-            _targetServer = targetServer ?? throw new ArgumentNullException(nameof(targetServer));
-            _accessToken = accessToken;
-        }
+        private readonly string _targetServer = targetServer ?? throw new ArgumentNullException(nameof(targetServer));
 
         public DataTable ExecuteQuery(string database, string query)
         {
@@ -30,10 +24,8 @@ namespace WTW.Diffusion.Core.Services.Database
             using (var command = new SqlCommand(query, connection))
             {
                 command.CommandTimeout = 300;
-                using (var adapter = new SqlDataAdapter(command))
-                {
-                    adapter.Fill(dataTable);
-                }
+                using var adapter = new SqlDataAdapter(command);
+                adapter.Fill(dataTable);
             }
             return dataTable;
         }
@@ -47,34 +39,28 @@ namespace WTW.Diffusion.Core.Services.Database
                 command.CommandTimeout = 300;
                 if (parameters?.Length > 0)
                     command.Parameters.AddRange(parameters);
-                using (var adapter = new SqlDataAdapter(command))
-                {
-                    adapter.Fill(dataTable);
-                }
+                using var adapter = new SqlDataAdapter(command);
+                adapter.Fill(dataTable);
             }
             return dataTable;
         }
 
         public int ExecuteNonQuery(string database, string query)
         {
-            using (var connection = OpenConnection(database))
-            using (var command = new SqlCommand(query, connection))
-            {
-                command.CommandTimeout = 300;
-                return command.ExecuteNonQuery();
-            }
+            using var connection = OpenConnection(database);
+            using var command = new SqlCommand(query, connection);
+            command.CommandTimeout = 300;
+            return command.ExecuteNonQuery();
         }
 
         public int ExecuteNonQuery(string database, string query, params SqlParameter[] parameters)
         {
-            using (var connection = OpenConnection(database))
-            using (var command = new SqlCommand(query, connection))
-            {
-                command.CommandTimeout = 300;
-                if (parameters?.Length > 0)
-                    command.Parameters.AddRange(parameters);
-                return command.ExecuteNonQuery();
-            }
+            using var connection = OpenConnection(database);
+            using var command = new SqlCommand(query, connection);
+            command.CommandTimeout = 300;
+            if (parameters?.Length > 0)
+                command.Parameters.AddRange(parameters);
+            return command.ExecuteNonQuery();
         }
 
         public bool DatabaseExists(string database)
@@ -135,13 +121,11 @@ namespace WTW.Diffusion.Core.Services.Database
 
                 var query = "SELECT migration_id FROM dbo.__MigrationLog";
                 var result = ExecuteQuery(database, query);
-                return result.Rows.Cast<DataRow>()
-                    .Select(row => Guid.Parse(row["migration_id"].ToString()))
-                    .ToList();
+                return [.. result.Rows.Cast<DataRow>().Select(row => Guid.Parse(row["migration_id"].ToString()))];
             }
             catch (SqlException ex) when (ex.Number == 208)
             {
-                return new List<Guid>();
+                return [];
             }
         }
 
@@ -177,7 +161,7 @@ WHERE i.is_primary_key=1 AND OBJECT_NAME(i.object_id)=@TableName
 ORDER BY ic.key_ordinal;";
 
             var result = ExecuteQuery(database, query, new SqlParameter("@TableName", table));
-            return result.Rows.Cast<DataRow>().Select(row => row["name"].ToString()).ToList();
+            return [.. result.Rows.Cast<DataRow>().Select(row => row["name"].ToString())];
         }
 
         public List<string> GetNonPrimaryColumns(string database, string table, List<string> primaryKeys)
@@ -191,7 +175,7 @@ WHERE OBJECT_ID = OBJECT_ID(@TableName)
 ORDER BY column_id";
 
             var result = ExecuteQuery(database, query, new SqlParameter("@TableName", table));
-            return result.Rows.Cast<DataRow>().Select(row => row["name"].ToString()).ToList();
+            return [.. result.Rows.Cast<DataRow>().Select(row => row["name"].ToString())];
         }
 
         public DataTable GetColumnMetadata(string database, string table)
@@ -228,20 +212,65 @@ ORDER BY c.column_id;";
             return $"[{identifier}]";
         }
 
+        /// <summary>
+        /// Executes a migration script and writes the log entry within a single transaction.
+        /// If the script fails, the transaction is rolled back and the migration ID is NOT logged,
+        /// allowing the user to fix the script and retry cleanly.
+        /// </summary>
+        public void ExecuteScriptAndLog(string database, string script, Guid migrationId, string displayName, string checksum)
+        {
+            var batches = Regex.Split(
+                script,
+                @"^\s*GO\s*$",
+                RegexOptions.IgnoreCase | RegexOptions.Multiline)
+                .Select(b => b.Trim())
+                .Where(b => !string.IsNullOrWhiteSpace(b))
+                .ToList();
+
+            using var connection = OpenConnection(database);
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                foreach (var batch in batches)
+                {
+                    using var command = new SqlCommand(batch, connection, transaction);
+                    command.CommandTimeout = 300;
+                    command.ExecuteNonQuery();
+                }
+
+                var logSql = @"
+INSERT INTO dbo.__MigrationLog (migration_id, script_checksum, script_filename, complete_dt, applied_by, deployed, version, package_version, release_version)
+VALUES (@MigrationId, @Checksum, @FileName, SYSDATETIME(), SYSTEM_USER, 1, NULL, NULL, NULL);";
+
+                using var logCommand = new SqlCommand(logSql, connection, transaction);
+                logCommand.Parameters.AddWithValue("@MigrationId", migrationId);
+                logCommand.Parameters.AddWithValue("@Checksum", checksum);
+                logCommand.Parameters.AddWithValue("@FileName", displayName);
+                logCommand.ExecuteNonQuery();
+
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
         private SqlConnection OpenConnection(string database)
         {
             var builder = new SqlConnectionStringBuilder
             {
                 DataSource = _targetServer,
                 InitialCatalog = database,
-                IntegratedSecurity = string.IsNullOrWhiteSpace(_accessToken),
+                IntegratedSecurity = string.IsNullOrWhiteSpace(accessToken),
                 MultipleActiveResultSets = true,
                 ConnectTimeout = 30
             };
 
             var connection = new SqlConnection(builder.ConnectionString);
-            if (!string.IsNullOrWhiteSpace(_accessToken))
-                connection.AccessToken = _accessToken;
+            if (!string.IsNullOrWhiteSpace(accessToken))
+                connection.AccessToken = accessToken;
 
             connection.Open();
             return connection;

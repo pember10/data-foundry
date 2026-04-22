@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Text.RegularExpressions;
+using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 
 namespace WTW.Diffusion.Core.Services.Database
@@ -10,14 +11,11 @@ namespace WTW.Diffusion.Core.Services.Database
     /// <summary>
     /// Detects and handles data changes between target and shadow databases.
     /// </summary>
-    public class ChangeDetectionService
+    public class ChangeDetectionService(SqlMigrationRepository repository, ILogger logger = null)
     {
-        private readonly SqlMigrationRepository _repository;
+        private readonly SqlMigrationRepository _repository = repository ?? throw new ArgumentNullException(nameof(repository));
 
-        public ChangeDetectionService(SqlMigrationRepository repository)
-        {
-            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-        }
+        private readonly string _sqlAndPrefix = " AND ";
 
         private static void ValidateIdentifier(string identifier, string parameterName)
         {
@@ -62,17 +60,24 @@ namespace WTW.Diffusion.Core.Services.Database
             if (pk == null || pk.Count == 0)
                 return GetChangeCountsWithoutPrimaryKey(targetDatabase, shadowDatabase, table);
 
-            var pkJoin = string.Join(" AND ", pk.Select(col => $"t.{QuoteIdentifier(col)} = s.{QuoteIdentifier(col)}"));
-            var pkJoinReverse = string.Join(" AND ", pk.Select(col => $"s.{QuoteIdentifier(col)} = t.{QuoteIdentifier(col)}"));
+            var pkJoin = string.Join(_sqlAndPrefix, pk.Select(col => $"t.{QuoteIdentifier(col)} = s.{QuoteIdentifier(col)}"));
+            var pkJoinReverse = string.Join(_sqlAndPrefix, pk.Select(col => $"s.{QuoteIdentifier(col)} = t.{QuoteIdentifier(col)}"));
 
             var nonPk = _repository.GetNonPrimaryColumns(targetDatabase, table, pk);
             string dataCompare = "1=1";
 
             if (nonPk.Count > 0)
             {
-                var targetCols = string.Join(", ", nonPk.Select(c => $"t.{QuoteIdentifier(c)}"));
-                var shadowCols = string.Join(", ", nonPk.Select(c => $"s.{QuoteIdentifier(c)}"));
-                dataCompare = $"CHECKSUM({targetCols}) <> CHECKSUM({shadowCols})";
+                var targetHash = string.Join(", '|', ", nonPk.Select(c => $"ISNULL(CONVERT(NVARCHAR(MAX), t.{QuoteIdentifier(c)}), '#NULL#')"));
+                var shadowHash = string.Join(", '|', ", nonPk.Select(c => $"ISNULL(CONVERT(NVARCHAR(MAX), s.{QuoteIdentifier(c)}), '#NULL#')"));
+
+                if (nonPk.Count > 1)
+                {
+                    targetHash = $"CONCAT({targetHash})";
+                    shadowHash = $"CONCAT({shadowHash})";
+                }
+
+                dataCompare = $"HASHBYTES('SHA2_256', {targetHash}) <> HASHBYTES('SHA2_256', {shadowHash})";
             }
 
             var combinedSql = $@"
@@ -159,7 +164,11 @@ SELECT
                         _repository.ExecuteNonQuery(targetDatabase, $"TRUNCATE TABLE {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)}");
                         _repository.ExecuteNonQuery(targetDatabase, $"INSERT INTO {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} SELECT * FROM {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)}");
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning($"Revert of [dbo].[{table}] (no PK) partially failed: {ex.Message}");
+                        throw;
+                    }
                 }
             }
         }
@@ -169,11 +178,19 @@ SELECT
             foreach (var col in pk)
                 ValidateIdentifier(col, "primaryKeyColumn");
 
-            var pkJoinExists = string.Join(" AND ", pk.Select(col =>
+            var pkJoinExists = string.Join(_sqlAndPrefix, pk.Select(col =>
                 $"{QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)}.{QuoteIdentifier(col)} = {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)}.{QuoteIdentifier(col)}"));
             var deleteSql = $"DELETE FROM {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} WHERE NOT EXISTS (SELECT 1 FROM {QuoteIdentifier(shadowDatabase)}.dbo.{QuoteIdentifier(table)} WHERE {pkJoinExists})";
 
-            try { _repository.ExecuteNonQuery(targetDatabase, deleteSql); } catch { }
+            try
+            {
+                _repository.ExecuteNonQuery(targetDatabase, deleteSql);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning($"Revert DELETE of [dbo].[{table}] failed: {ex.Message}");
+                throw;
+            }
 
             var columnsQuery = $"SELECT name FROM {QuoteIdentifier(shadowDatabase)}.sys.columns WHERE [object_id] = (SELECT [object_id] FROM {QuoteIdentifier(shadowDatabase)}.sys.[tables] WHERE [name] = @tableName)";
             var colResult = _repository.ExecuteQuery(shadowDatabase, columnsQuery);
@@ -183,7 +200,7 @@ SELECT
                 ValidateIdentifier(col, "columnName");
 
             var colList = string.Join(", ", sourceCols.Select(c => QuoteIdentifier(c)));
-            var onClause = string.Join(" AND ", pk.Select(c => $"TARGET.{QuoteIdentifier(c)}=SOURCE.{QuoteIdentifier(c)}"));
+            var onClause = string.Join(_sqlAndPrefix, pk.Select(c => $"TARGET.{QuoteIdentifier(c)}=SOURCE.{QuoteIdentifier(c)}"));
             var updateSet = string.Join(", ", sourceCols.Where(c => !pk.Contains(c)).Select(c => $"TARGET.{QuoteIdentifier(c)} = SOURCE.{QuoteIdentifier(c)}"));
 
             var mergeSql = $@"
@@ -191,7 +208,15 @@ MERGE {QuoteIdentifier(targetDatabase)}.dbo.{QuoteIdentifier(table)} AS TARGET U
 WHEN MATCHED THEN UPDATE SET {updateSet}
 WHEN NOT MATCHED BY TARGET THEN INSERT ({colList}) VALUES ({colList});";
 
-            try { _repository.ExecuteNonQuery(targetDatabase, mergeSql); } catch { }
+            try
+            {
+                _repository.ExecuteNonQuery(targetDatabase, mergeSql);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning($"Revert MERGE of [dbo].[{table}] failed: {ex.Message}");
+                throw;
+            }
         }
     }
 }
