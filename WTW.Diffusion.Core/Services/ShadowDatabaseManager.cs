@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Newtonsoft.Json;
 using WTW.Diffusion.Core.Abstractions;
-using WTW.Diffusion.Core.Helpers;
 using WTW.Diffusion.Core.Models;
 using WTW.Diffusion.Core.Services.Database;
 using WTW.Diffusion.Core.Services.Migration;
@@ -15,36 +17,22 @@ namespace WTW.Diffusion.Core.Services
     /// Manages the lifecycle of the shadow database used for change detection.
     /// Handles creation, migration execution, hash-based caching, and validation.
     /// </summary>
-    public class ShadowDatabaseManager
+    public class ShadowDatabaseManager(
+        SqlMigrationRepository repository,
+        MigrationScriptManager scriptManager,
+        string shadowDatabase,
+        string migrationLogSchemaPath,
+        string migrationsDir,
+        string shadowCacheFilePath,
+        ILogger logger = null)
     {
-        private readonly SqlMigrationRepository _repository;
-        private readonly MigrationScriptManager _scriptManager;
-        private readonly string _shadowDatabase;
-        private readonly string _migrationLogSchemaPath;
-        private readonly string _migrationsDir;
-        private readonly string _shadowCacheFilePath;
-        private readonly ILogger _logger;
-
+        private readonly SqlMigrationRepository _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        private readonly MigrationScriptManager _scriptManager = scriptManager ?? throw new ArgumentNullException(nameof(scriptManager));
+        private readonly string _shadowDatabase = shadowDatabase ?? throw new ArgumentNullException(nameof(shadowDatabase));
+        private readonly string _migrationLogSchemaPath = migrationLogSchemaPath ?? throw new ArgumentNullException(nameof(migrationLogSchemaPath));
+        private readonly string _migrationsDir = migrationsDir ?? throw new ArgumentNullException(nameof(migrationsDir));
         private static string _lastShadowMigrationHash;
-        private static readonly object _shadowDbLock = new object();
-
-        public ShadowDatabaseManager(
-            SqlMigrationRepository repository,
-            MigrationScriptManager scriptManager,
-            string shadowDatabase,
-            string migrationLogSchemaPath,
-            string migrationsDir,
-            string shadowCacheFilePath,
-            ILogger logger = null)
-        {
-            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-            _scriptManager = scriptManager ?? throw new ArgumentNullException(nameof(scriptManager));
-            _shadowDatabase = shadowDatabase ?? throw new ArgumentNullException(nameof(shadowDatabase));
-            _migrationLogSchemaPath = migrationLogSchemaPath ?? throw new ArgumentNullException(nameof(migrationLogSchemaPath));
-            _migrationsDir = migrationsDir ?? throw new ArgumentNullException(nameof(migrationsDir));
-            _shadowCacheFilePath = shadowCacheFilePath;
-            _logger = logger;
-        }
+        private static readonly object _shadowDbLock = new();
 
         /// <summary>
         /// Ensures the shadow database exists and is up to date with all migration scripts.
@@ -62,7 +50,7 @@ namespace WTW.Diffusion.Core.Services
                 if (!_repository.DatabaseExists(_shadowDatabase))
                 {
                     needsRecreate = true;
-                    _logger?.Log("Shadow database does not exist");
+                    logger?.Log("Shadow database does not exist");
                 }
                 else if (_lastShadowMigrationHash != null && _lastShadowMigrationHash == currentHash)
                 {
@@ -81,7 +69,7 @@ namespace WTW.Diffusion.Core.Services
                     {
                         needsRecreate = true;
                         if (cachedInfo != null)
-                            _logger?.Log("Shadow database cache invalid — migrations have changed");
+                            logger?.Log("Shadow database cache invalid — migrations have changed");
                     }
                 }
             }
@@ -99,7 +87,7 @@ namespace WTW.Diffusion.Core.Services
             }
             else
             {
-                _logger?.Log($"Shadow database is up to date (source: {cacheSource})");
+                logger?.Log($"Shadow database is up to date (source: {cacheSource})");
             }
 
             return needsRecreate;
@@ -110,21 +98,21 @@ namespace WTW.Diffusion.Core.Services
         /// </summary>
         public void Recreate()
         {
-            _logger?.Log("Step 1/4: Dropping existing shadow database...");
+            logger?.Log("Step 1/4: Dropping existing shadow database...");
             _repository.DropAndRecreateDatabase(_shadowDatabase);
 
-            _logger?.Log("Step 2/4: Creating migration log table...");
+            logger?.Log("Step 2/4: Creating migration log table...");
             _repository.EnsureMigrationLogTable(_shadowDatabase, _migrationLogSchemaPath);
 
-            _logger?.Log("Step 3/4: Loading pending migrations...");
+            logger?.Log("Step 3/4: Loading pending migrations...");
             List<MigrationInfo> pending = _scriptManager.GetPendingMigrations(_shadowDatabase);
-            _logger?.Log($"Found {pending.Count} migration(s) to apply");
+            logger?.Log($"Found {pending.Count} migration(s) to apply");
 
-            _logger?.Log("Step 4/4: Executing migrations...");
+            logger?.Log("Step 4/4: Executing migrations...");
             for (int i = 0; i < pending.Count; i++)
             {
                 MigrationInfo migration = pending[i];
-                _logger?.Log($"  [{i + 1}/{pending.Count}] Applying {Path.GetFileName(migration.FileName)}...");
+                logger?.Log($"  [{i + 1}/{pending.Count}] Applying {Path.GetFileName(migration.FileName)}...");
                 _scriptManager.ExecuteMigrationScript(_shadowDatabase, migration);
             }
         }
@@ -145,22 +133,18 @@ namespace WTW.Diffusion.Core.Services
         {
             try
             {
-                List<string> files = Directory.GetFiles(_migrationsDir, "*.sql", SearchOption.AllDirectories)
-                    .OrderBy(f => f)
-                    .ToList();
+                List<string> files = [.. Directory.GetFiles(_migrationsDir, "*.sql", SearchOption.AllDirectories).OrderBy(f => f)];
 
                 if (files.Count == 0)
                     return "EMPTY";
 
                 string combined = string.Join("|", files.Select(f =>
-                    $"{Path.GetFileName(f)}:{new System.IO.FileInfo(f).LastWriteTimeUtc.Ticks}"));
+                    $"{Path.GetFileName(f)}:{new FileInfo(f).LastWriteTimeUtc.Ticks}"));
 
-                using (var sha256 = System.Security.Cryptography.SHA256.Create())
-                {
-                    byte[] bytes = System.Text.Encoding.UTF8.GetBytes(combined);
-                    byte[] hash = sha256.ComputeHash(bytes);
-                    return BitConverter.ToString(hash).Replace("-", "");
-                }
+                using var sha256 = SHA256.Create();
+                byte[] bytes = Encoding.UTF8.GetBytes(combined);
+                byte[] hash = sha256.ComputeHash(bytes);
+                return BitConverter.ToString(hash).Replace("-", "");
             }
             catch
             {
@@ -170,13 +154,13 @@ namespace WTW.Diffusion.Core.Services
 
         private ShadowDatabaseCacheInfo LoadCache()
         {
-            if (string.IsNullOrEmpty(_shadowCacheFilePath) || !File.Exists(_shadowCacheFilePath))
+            if (string.IsNullOrEmpty(shadowCacheFilePath) || !File.Exists(shadowCacheFilePath))
                 return null;
 
             try
             {
                 return JsonConvert.DeserializeObject<ShadowDatabaseCacheInfo>(
-                    File.ReadAllText(_shadowCacheFilePath));
+                    File.ReadAllText(shadowCacheFilePath));
             }
             catch
             {
@@ -186,7 +170,7 @@ namespace WTW.Diffusion.Core.Services
 
         private void SaveCache(string hash, int migrationCount)
         {
-            if (string.IsNullOrEmpty(_shadowCacheFilePath))
+            if (string.IsNullOrEmpty(shadowCacheFilePath))
                 return;
 
             try
@@ -199,12 +183,12 @@ namespace WTW.Diffusion.Core.Services
                     DatabaseName = _shadowDatabase
                 };
 
-                File.WriteAllText(_shadowCacheFilePath,
+                File.WriteAllText(shadowCacheFilePath,
                     JsonConvert.SerializeObject(info, Formatting.Indented));
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to save shadow cache: {ex.Message}");
+                Debug.WriteLine($"Failed to save shadow cache: {ex.Message}");
             }
         }
 

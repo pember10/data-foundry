@@ -19,6 +19,12 @@ namespace WTW.Diffusion.Core
             public const string Scripts = "Scripts";
         }
 
+        public static class StaticFiles
+        {
+            public const string TableListJson = "tablelist.json";
+            public const string SqlMetadataAutomationPs1 = "SqlMetadataAutomation.ps1";
+        }
+
         public static class Tables
         {
             public const string MigrationLog = "__MigrationLog";
@@ -34,6 +40,26 @@ namespace WTW.Diffusion.Core
         {
             public const string SqlIdentifier = @"^[a-zA-Z_][a-zA-Z0-9_]*$";
             public const string MigrationIdPattern = @"--\s*<Migration\s+ID=""(?<id>[0-9a-fA-F-]{36})""\s*/>";
+        }
+
+        public static class Parameters
+        {
+            public const string TargetDatabase = "TargetDatabase";
+            public const string TargetServer = "TargetServer";
+            public const string MigrationsPath = "MigrationsPath";
+            public const string ConfirmTargetMigration = "ConfirmTargetMigration";
+            public const string DetectChanges = "DetectChanges";
+            public const string ConfigPath = "ConfigPath";
+            public const string Action = "Action";
+            public const string ScriptName = "ScriptName";
+
+        }
+
+        public static class Actions
+        {
+            public const string Apply = "Apply";
+            public const string Migrate = "Migrate";
+            public const string Revert = "Revert";
         }
     }
 }

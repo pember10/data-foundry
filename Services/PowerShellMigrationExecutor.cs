@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using data_foundry.Options;
+using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using WTW.Diffusion.Core.Helpers;
 using WTW.Diffusion.Core.Models;
 using WTW.Diffusion.Core.Services.Migration;
-using data_foundry.Options;
-using EnvDTE;
+using CoreConstants = WTW.Diffusion.Core.Constants;
 
 namespace data_foundry.Services
 {
@@ -41,11 +42,11 @@ namespace data_foundry.Services
 
             var parameters = new Dictionary<string, object>
             {
-                { "TargetDatabase", database },
-                { "TargetServer", server },
-                { "MigrationsPath", GetMigrationsPath() },
-                { "ConfirmTargetMigration", requireConfirmation },
-                { "DetectChanges", false }
+                { CoreConstants.Parameters.TargetDatabase, database },
+                { CoreConstants.Parameters.TargetServer, server },
+                { CoreConstants.Parameters.MigrationsPath, GetMigrationsPath() },
+                { CoreConstants.Parameters.ConfirmTargetMigration, requireConfirmation },
+                { CoreConstants.Parameters.DetectChanges, false }
             };
 
             var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
@@ -70,16 +71,16 @@ namespace data_foundry.Services
 
             var parameters = new Dictionary<string, object>
             {
-                { "TargetDatabase", database },
-                { "TargetServer", server },
-                { "MigrationsPath", GetMigrationsPath() },
-                { "DetectChanges", true },
-                { "ConfigPath", GetTableListConfigPath() }
+                { CoreConstants.Parameters.TargetDatabase, database },
+                { CoreConstants.Parameters.TargetServer, server },
+                { CoreConstants.Parameters.MigrationsPath, GetMigrationsPath() },
+                { CoreConstants.Parameters.DetectChanges, true },
+                { CoreConstants.Parameters.ConfigPath, GetTableListConfigPath() }
             };
 
             if (!string.IsNullOrEmpty(action))
             {
-                parameters["Action"] = action;
+                parameters[CoreConstants.Parameters.Action] = action;
             }
 
             var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
@@ -107,9 +108,9 @@ namespace data_foundry.Services
             // Run script without DetectChanges to just check pending migrations
             var parameters = new Dictionary<string, object>
             {
-                { "TargetDatabase", database },
-                { "TargetServer", server },
-                { "MigrationsPath", GetMigrationsPath() }
+                { CoreConstants.Parameters.TargetDatabase, database },
+                { CoreConstants.Parameters.TargetServer, server },
+                { CoreConstants.Parameters.MigrationsPath, GetMigrationsPath() }
             };
 
             var result = await _psRunner.ExecuteAsync(parameters, null).ConfigureAwait(true);
@@ -135,13 +136,13 @@ namespace data_foundry.Services
 
             var parameters = new Dictionary<string, object>
             {
-                { "TargetDatabase", database },
-                { "TargetServer", server },
-                { "MigrationsPath", GetMigrationsPath() },
-                { "DetectChanges", true },
-                { "Action", "Migrate" },
-                { "ScriptName", scriptName },  // Pre-supply script name!
-                { "ConfigPath", GetTableListConfigPath() }
+                { CoreConstants.Parameters.TargetDatabase, database },
+                { CoreConstants.Parameters.TargetServer, server },
+                { CoreConstants.Parameters.MigrationsPath, GetMigrationsPath() },
+                { CoreConstants.Parameters.DetectChanges, true },
+                { CoreConstants.Parameters.Action, CoreConstants.Actions.Migrate },
+                { CoreConstants.Parameters.ScriptName, scriptName },  // Pre-supply script name!
+                { CoreConstants.Parameters.ConfigPath, GetTableListConfigPath() }
             };
 
             var result = await _psRunner.ExecuteAsync(parameters, null).ConfigureAwait(true);
@@ -168,12 +169,12 @@ namespace data_foundry.Services
 
             var parameters = new Dictionary<string, object>
             {
-                { "TargetDatabase", database },
-                { "TargetServer", server },
-                { "MigrationsPath", GetMigrationsPath() },
-                { "DetectChanges", true },
-                { "Action", "Revert" },  // Revert action
-                { "ConfigPath", GetTableListConfigPath() }
+                { CoreConstants.Parameters.TargetDatabase, database },
+                { CoreConstants.Parameters.TargetServer, server },
+                { CoreConstants.Parameters.MigrationsPath, GetMigrationsPath() },
+                { CoreConstants.Parameters.DetectChanges, true },
+                { CoreConstants.Parameters.Action, CoreConstants.Actions.Revert },  // Revert action
+                { CoreConstants.Parameters.ConfigPath, GetTableListConfigPath() }
             };
 
             var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
@@ -186,15 +187,15 @@ namespace data_foundry.Services
             }
         }
 
-        private string GetPowerShellScriptPath()
+        private static string GetPowerShellScriptPath()
         {
             var installDir = PathHelper.GetExtensionInstallDirectory(typeof(PowerShellMigrationExecutor));
-            return Path.Combine(installDir, "Scripts", "SqlMetadataAutomation.ps1");
+            return Path.Combine(installDir, CoreConstants.Folders.Scripts, CoreConstants.StaticFiles.SqlMetadataAutomationPs1);
         }
 
         private string GetMigrationsPath()
         {
-            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+            ThreadHelper.ThrowIfNotOnUIThread();
 
             if (_environment?.Solution?.Projects == null)
                 throw new InvalidOperationException("No solution loaded");
@@ -204,23 +205,23 @@ namespace data_foundry.Services
                 if (project == null || string.IsNullOrEmpty(project.FullName))
                     continue;
 
-                if (!project.FullName.ToLowerInvariant().EndsWith(".sqlproj"))
+                if (!project.FullName.ToLowerInvariant().EndsWith(CoreConstants.FileExtensions.SqlProj))
                     continue;
 
                 if (string.Equals(project.Name, _options.SqlProject, StringComparison.OrdinalIgnoreCase))
                 {
                     var projectDir = Path.GetDirectoryName(project.FullName);
-                    return Path.Combine(projectDir, _options.MigrationsFolder ?? "Migrations");
+                    return Path.Combine(projectDir, _options.MigrationsFolder ?? CoreConstants.Folders.Migrations);
                 }
             }
 
             throw new InvalidOperationException($"SQL Project '{_options.SqlProject}' not found in solution.");
         }
 
-        private string GetTableListConfigPath()
+        private static string GetTableListConfigPath()
         {
             var installDir = PathHelper.GetExtensionInstallDirectory(typeof(PowerShellMigrationExecutor));
-            return Path.Combine(installDir, WTW.Diffusion.Core.Constants.Folders.Config, "tablelist.json");
+            return Path.Combine(installDir, CoreConstants.Folders.Config, CoreConstants.StaticFiles.TableListJson);
         }
     }
 }

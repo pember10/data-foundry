@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using WTW.Diffusion.Core.Models;
 using WTW.Diffusion.Core.Services.Database;
+using CoreConstants = WTW.Diffusion.Core.Constants;
 
 namespace WTW.Diffusion.Core.Services.Migration
 {
@@ -49,7 +50,7 @@ namespace WTW.Diffusion.Core.Services.Migration
         public List<MigrationInfo> GetPendingMigrations(string database)
         {
             var executedIds = _repository.GetExecutedMigrationIds(database);
-            var files = Directory.GetFiles(_migrationsPath, "*.sql", SearchOption.AllDirectories)
+            var files = Directory.GetFiles(_migrationsPath, $"*.{CoreConstants.FileExtensions.Sql}", SearchOption.AllDirectories)
                 .OrderBy(f => f)
                 .ToList();
 
@@ -65,12 +66,10 @@ namespace WTW.Diffusion.Core.Services.Migration
 
         public static string GetFileChecksum(string path)
         {
-            using (var sha256 = SHA256.Create())
-            using (var stream = File.OpenRead(path))
-            {
-                var hash = sha256.ComputeHash(stream);
-                return BitConverter.ToString(hash).Replace("-", "");
-            }
+            using var stream = File.OpenRead(path);
+            using var sha256 = SHA256.Create();
+            var hash = sha256.ComputeHash(stream);
+            return BitConverter.ToString(hash).Replace("-", "");
         }
 
         public string GetRelativeFilename(string fullPath)
@@ -89,7 +88,11 @@ namespace WTW.Diffusion.Core.Services.Migration
                         : $"{rootLeaf}\\{relative}";
                 }
             }
-            catch { }
+            catch (Exception)
+            {
+                // Exception is intentionally ignored because failure to resolve a relative path
+                // is not critical; fallback to file name below.
+            }
 
             return Path.GetFileName(fullPath);
         }

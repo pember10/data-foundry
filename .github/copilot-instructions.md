@@ -8,7 +8,7 @@ A Visual Studio extension (VSIX) that detects data changes between a target SQL 
 | Project | Framework | Purpose |
 |---|---|---|
 | `data-foundry` (VSIX) | .NET 4.7.2 | VS extension shell — all VS SDK, DTE, WPF UI |
-| `WTW.Diffusion.Core` | .NET Standard 2.0 | Platform-independent business logic |
+| `WTW.Diffusion.Core` | .NET Standard 2.0 | Platform-independent business logic. Packages: `Microsoft.Data.SqlClient 5.1.5`, `Azure.Identity 1.21.0`, `Azure.Core 1.53.0`, `Microsoft.Identity.Client 4.83.3`, `Newtonsoft.Json 13.0.3` |
 | `WTW.Diffusion.Cli` | .NET 8 _(planned)_ | CLI tool for Azure DevOps / GitHub Actions pipelines |
 
 ## Architecture Rules
@@ -96,3 +96,4 @@ Operations run via C# (`CSharpMigrationExecutor`) or PowerShell (`PowerShellMigr
 - VSIX must be built via Visual Studio — `dotnet build` / `MSBuild.exe` direct invocation fails (WPF/WinFx targets require VS toolchain)
 - `WTW.Diffusion.Core` can be built with `dotnet build` independently
 - If CS2001 ghost errors appear for deleted VSIX files, delete `obj\` and rebuild
+- **`System.Management.Automation` is pinned at `5.1.1`** — `6.x` targets `netcoreapp2.1` and `7.x` targets `net8.0`; neither is compatible with `net472`. Upgrading requires migrating the VSIX to `net8.0-windows` (SDK-style project format, VS 2022 17.9+), which should be bundled with the `WTW.Diffusion.Cli` migration effort.

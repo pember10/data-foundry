@@ -1,12 +1,10 @@
 using System;
-using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
-using WTW.Diffusion.Core.Models;
 
 namespace WTW.Diffusion.Core.Services.Database
 {
@@ -117,7 +115,7 @@ namespace WTW.Diffusion.Core.Services.Database
                 var tableCheckResult = ExecuteQuery(database, checkTableQuery);
 
                 if (tableCheckResult.Rows.Count == 0 || Convert.ToInt32(tableCheckResult.Rows[0]["exists_flag"]) == 0)
-                    return new List<Guid>();
+                    return [];
 
                 var query = "SELECT migration_id FROM dbo.__MigrationLog";
                 var result = ExecuteQuery(database, query);
