@@ -14,8 +14,9 @@
             <Setter Property="Foreground" Value="#666666"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="16,12,16,8"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Padding" Value="16,12,16,12"/>
+            <Setter Property="Margin" Value="0,0,0,0"/>
+			<Setter Property="Width" Value="115"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
@@ -50,6 +51,7 @@
                                     <Condition Property="IsSelected" Value="False"/>
                                 </MultiTrigger.Conditions>
                                 <Setter TargetName="ContentSite" Property="TextElement.Foreground" Value="#0078D4"/>
+							    <Setter TargetName="Border" Property="Cursor" Value="Hand"/>
                             </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -75,7 +77,7 @@
                                     Background="White" 
                                     BorderBrush="#E0E0E0" 
                                     BorderThickness="0,0,0,1"
-                                    Padding="20,8,20,0">
+                                    Padding="20,0,20,0">
                                 <Grid>
                                     <TabPanel IsItemsHost="True" Background="Transparent"/>
                                 </Grid>
@@ -100,7 +102,7 @@
                 Background="Transparent"
                 BorderThickness="0"
                 Padding="8"
-                Margin="0,8,20,0"
+                Margin="0,4,10,0"
                 Cursor="Hand"
                 ToolTip="Settings"
                 Panel.ZIndex="100"

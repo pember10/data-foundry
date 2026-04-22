@@ -2,10 +2,11 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using data_foundry.Options;
 using data_foundry.Services;
-using data_foundry.Models;
+using WTW.Diffusion.Core.Models;
 using System.Threading.Tasks;
 
 namespace data_foundry.Views.Controls
@@ -322,7 +323,7 @@ namespace data_foundry.Views.Controls
                 ShowSuccessState("Migrations deployed successfully!");
                 
                 MessageBox.Show(
-                    "Migrations executed successfully!\n\nCheck the Output window (Data Foundry pane) for details.",
+                    "Migrations executed successfully!\n\nCheck the Output window (WTW Diffusion pane) for details.",
                     "Migrations Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -454,54 +455,50 @@ namespace data_foundry.Views.Controls
 
         private void ShowReadyState()
         {
-            ReadyIcon.Visibility = Visibility.Visible;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
             CancelButton.Visibility = Visibility.Collapsed;
             
-            LoadingStatusText.Text = "Ready for operations...";
-            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
-                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#666666"));
+            LoadingStatusText.Text = "Idle...";
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#666666"));
         }
 
         private void ShowProcessingState(string message)
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Visible;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
             CancelButton.Visibility = Visibility.Visible;
             
             LoadingStatusText.Text = message;
-            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
-                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2196F3"));
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#2196F3"));
         }
 
         private void ShowSuccessState(string message = "Completed successfully!")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Visible;
             ErrorIcon.Visibility = Visibility.Collapsed;
             CancelButton.Visibility = Visibility.Collapsed;
             
             LoadingStatusText.Text = message;
-            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
-                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#4CAF50"));
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#4CAF50"));
         }
 
         private void ShowErrorState(string message = "Operation failed")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Visible;
             CancelButton.Visibility = Visibility.Collapsed;
             
             LoadingStatusText.Text = message;
-            LoadingStatusText.Foreground = new System.Windows.Media.SolidColorBrush(
-                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#F44336"));
+            LoadingStatusText.Foreground = new SolidColorBrush(
+                (Color)ColorConverter.ConvertFromString("#F44336"));
         }
 
         private void ShowLoadingIndicator(string message)
@@ -681,3 +678,4 @@ namespace data_foundry.Views.Controls
         }
     }
 }
+

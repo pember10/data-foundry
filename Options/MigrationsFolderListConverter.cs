@@ -40,7 +40,7 @@ namespace data_foundry.Options
             foreach (Project project in projects)
             {
                 if (project == null || string.IsNullOrEmpty(project.FullName) ||
-                    !project.FullName.ToLowerInvariant().EndsWith(Constants.FileExtensions.SqlProj))
+                    !project.FullName.ToLowerInvariant().EndsWith(WTW.Diffusion.Core.Constants.FileExtensions.SqlProj))
                 {
                     continue;
                 }

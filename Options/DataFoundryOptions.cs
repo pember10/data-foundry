@@ -3,7 +3,8 @@ using System.ComponentModel;
 using System.Drawing.Design;
 using System.Linq;
 using Microsoft.VisualStudio.Shell;
-using static data_foundry.Constants;
+using WTW.Diffusion.Core.Config;
+using static WTW.Diffusion.Core.Constants;
 
 namespace data_foundry.Options
 {
@@ -41,10 +42,16 @@ namespace data_foundry.Options
         public bool VerboseLogging { get; set; }
 
         [DefaultValue("RemoteSigned")]
-        [Category("General")]
+        [Category("Advanced")]
         [DisplayName("Execution Policy")]
         [Description("PowerShell execution policy.")]
         public string ExecutionPolicy { get; set; }
+
+        [DefaultValue(false)]
+        [Category("Advanced")]
+        [DisplayName("Use PowerShell Script")]
+        [Description("Use SqlMetadataAutomation.ps1 for migrations and change detection. When disabled, uses built-in C# orchestration. Requires PowerShell SqlServer module.")]
+        public bool UsePowerShellScript { get; set; }
 
         [TypeConverter(typeof(SqlProjectListConverter))]
         [DefaultValue("Api.Db")]
@@ -122,7 +129,7 @@ namespace data_foundry.Options
             get
             {
                 // Read from extension's tablelist.json
-                var config = Config.DataFoundryConfig.LoadTableList();
+                var config = WTW.Diffusion.Core.Config.DataFoundryConfig.LoadTableList();
                 return config.Tables != null ? string.Join(", ", config.Tables) : string.Empty;
             }
             set
@@ -133,11 +140,11 @@ namespace data_foundry.Options
                     .Where(t => !string.IsNullOrWhiteSpace(t))
                     .ToList() ?? new System.Collections.Generic.List<string>();
 
-                var config = new Config.TableListConfig { Tables = tables };
+                var config = new WTW.Diffusion.Core.Config.TableListConfig { Tables = tables };
                 
-                var assemblyPath = typeof(Config.TableListConfig).Assembly.Location;
+                var assemblyPath = typeof(WTW.Diffusion.Core.Config.TableListConfig).Assembly.Location;
                 var installDir = System.IO.Path.GetDirectoryName(assemblyPath);
-                var configPath = System.IO.Path.Combine(installDir, Folders.Config, "tablelist.json");
+                var configPath = System.IO.Path.Combine(installDir, WTW.Diffusion.Core.Constants.Folders.Config, "tablelist.json");
 
                 var json = Newtonsoft.Json.JsonConvert.SerializeObject(config, Newtonsoft.Json.Formatting.Indented);
                 

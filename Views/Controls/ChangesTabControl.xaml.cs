@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using data_foundry.Models;
+using WTW.Diffusion.Core.Models;
 using data_foundry.Services;
 using Microsoft.VisualStudio.Shell;
 
@@ -23,6 +23,7 @@ namespace data_foundry.Views.Controls
             InitializeDummyData();
             RefreshChangesBtn.Click += RefreshChangesButton_Click;
             GenerateScriptBtn.Click += GenerateScriptButton_Click;
+            RevertChangesBtn.Click += RevertChangesButton_Click;
             ChangeTypeFilter.SelectionChanged += ChangeTypeFilter_SelectionChanged;
             CancelButton.Click += CancelButton_Click;
             ApplyPendingMigrationsBtn.Click += ApplyPendingMigrationsButton_Click;
@@ -35,6 +36,9 @@ namespace data_foundry.Views.Controls
             
             // Subscribe to database sync status changes
             DatabaseSyncStatusService.Instance.SyncStatusChanged += OnDatabaseSyncStatusChanged;
+            
+            // Subscribe to settings changes
+            SettingsChangedService.Instance.SettingsChanged += OnSettingsChanged;
             
             // Initialize button states
             UpdateButtonStates();
@@ -107,7 +111,6 @@ namespace data_foundry.Views.Controls
         private async void OnDatabaseSyncStatusChanged(object sender, EventArgs e)
         {
             // Re-check sync status when notified of changes
-            // Use try-catch to handle any threading or timing issues
             try
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -115,8 +118,21 @@ namespace data_foundry.Views.Controls
             }
             catch (Exception ex)
             {
-                // Log but don't crash
                 System.Diagnostics.Debug.WriteLine($"Error updating sync status: {ex.Message}");
+            }
+        }
+
+        private async void OnSettingsChanged(object sender, EventArgs e)
+        {
+            // Refresh sync status and re-check changes when settings change
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                await CheckSyncStatusAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error refreshing after settings change: {ex.Message}");
             }
         }
 
@@ -358,6 +374,55 @@ namespace data_foundry.Views.Controls
             }
         }
 
+        private async void RevertChangesButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Check if there are any changes
+            var changesWithDiffs = _allChanges?.Where(c => c.HasChanges).ToList();
+            if (changesWithDiffs == null || changesWithDiffs.Count == 0)
+            {
+                MessageBox.Show(
+                    "No changes detected to revert.",
+                    "No Changes",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            // Confirm revert with strong warning
+            var confirmResult = MessageBox.Show(
+                $"?? REVERT CHANGES - WARNING ??\n\n" +
+                $"This will PERMANENTLY DELETE data changes in your local database for {changesWithDiffs.Count} table(s):\n\n" +
+                string.Join("\n", changesWithDiffs.Select(c => $"• {c.Table}")) + "\n\n" +
+                $"Your database will be synchronized to match the clean migration state.\n\n" +
+                $"This action CANNOT be undone!\n\n" +
+                $"Do you want to continue?",
+                "Confirm Revert Changes",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirmResult != MessageBoxResult.Yes)
+                return;
+
+            if (!GlobalProcessingStateService.Instance.TryStartProcessing("Reverting changes..."))
+            {
+                return;
+            }
+
+            try
+            {
+                await RevertChangesAsync(changesWithDiffs);
+                GlobalProcessingStateService.Instance.CompleteProcessing(ProcessingCompletionStatus.Success, 
+                    $"Reverted changes for {changesWithDiffs.Count} table(s)");
+                
+                // Refresh changes to show new state
+                await DetectChangesAsync();
+            }
+            catch
+            {
+                GlobalProcessingStateService.Instance.CompleteProcessing(ProcessingCompletionStatus.Error, "Revert failed");
+            }
+        }
+
         private async Task DetectChangesAsync()
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -491,6 +556,71 @@ namespace data_foundry.Views.Controls
             }
         }
 
+        private async Task RevertChangesAsync(System.Collections.Generic.List<TableChangeSummary> changesWithDiffs)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            try
+            {
+                OutputWindowLogger.Clear();
+                OutputWindowLogger.Show();
+                OutputWindowLogger.Log("=== Reverting Database Changes ===");
+
+                // Create orchestrator on UI thread
+                var orchestrator = SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
+                
+                // Get table names
+                var tableNames = changesWithDiffs.Select(c => c.Table).ToList();
+                
+                OutputWindowLogger.Log($"Reverting changes for {tableNames.Count} table(s):");
+                foreach (var table in tableNames)
+                {
+                    OutputWindowLogger.Log($"  • {table}");
+                }
+
+                // Run revert on background thread
+                await Task.Run(() =>
+                {
+                    orchestrator.RevertChanges(tableNames, msg =>
+                    {
+                        ThreadHelper.JoinableTaskFactory.Run(async () =>
+                        {
+                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                            OutputWindowLogger.Log(msg);
+                        });
+                    });
+                });
+
+                OutputWindowLogger.Log("=== Revert Complete ===");
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                
+                // Show success in status indicator
+                ShowSuccessState($"Reverted {tableNames.Count} table(s)");
+                
+                MessageBox.Show(
+                    $"Successfully reverted changes for {tableNames.Count} table(s)!\n\n" +
+                    "Your database now matches the clean migration state.",
+                    "Revert Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.LogError($"Revert failed: {ex.Message}");
+                OutputWindowLogger.LogError(ex.StackTrace);
+
+                ShowErrorState("Revert failed");
+                
+                MessageBox.Show(
+                    $"Failed to revert changes:\n\n{ex.Message}\n\nCheck the Output window for details.",
+                    "Revert Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
         private string GenerateScriptFileName()
         {            
             // Format: 001_US000000_1_202501011123.sql (always 001)
@@ -543,26 +673,25 @@ namespace data_foundry.Views.Controls
         private void SetButtonsEnabled(bool enabled)
         {
             RefreshChangesBtn.IsEnabled = enabled;
+            RevertChangesBtn.IsEnabled = enabled;
             GenerateScriptBtn.IsEnabled = enabled;
             ChangeTypeFilter.IsEnabled = enabled;
         }
 
         private void ShowReadyState()
         {
-            ReadyIcon.Visibility = Visibility.Visible;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
             CancelButton.Visibility = Visibility.Collapsed;
             
-            LoadingStatusText.Text = "Ready to detect changes...";
+            LoadingStatusText.Text = "Idle...";
             LoadingStatusText.Foreground = new SolidColorBrush(
                 (Color)ColorConverter.ConvertFromString("#666666"));
         }
 
         private void ShowProcessingState(string message)
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Visible;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Collapsed;
@@ -575,7 +704,6 @@ namespace data_foundry.Views.Controls
 
         private void ShowSuccessState(string message = "Completed successfully!")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Visible;
             ErrorIcon.Visibility = Visibility.Collapsed;
@@ -588,7 +716,6 @@ namespace data_foundry.Views.Controls
 
         private void ShowErrorState(string message = "Operation failed")
         {
-            ReadyIcon.Visibility = Visibility.Collapsed;
             ProcessingIcon.Visibility = Visibility.Collapsed;
             SuccessIcon.Visibility = Visibility.Collapsed;
             ErrorIcon.Visibility = Visibility.Visible;

@@ -1,11 +1,11 @@
-using data_foundry.Config;
-using data_foundry.Helpers;
+using WTW.Diffusion.Core.Config;
+using WTW.Diffusion.Core.Helpers;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using static data_foundry.Constants;
+using static WTW.Diffusion.Core.Constants;
 
 namespace data_foundry.Services
 {
