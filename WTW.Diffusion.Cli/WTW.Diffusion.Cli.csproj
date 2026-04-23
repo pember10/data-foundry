@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>WTW.Diffusion.Cli</RootNamespace>
+    <AssemblyName>wtw-diffusion</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>WTW</Authors>
+    <Company>WTW</Company>
+    <Product>WTW Diffusion CLI</Product>
+    <Description>CLI tool for WTW Diffusion SQL migration and change detection in CI/CD pipelines</Description>
+    <Copyright>Copyright � WTW 2025</Copyright>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WTW.Diffusion.Core\WTW.Diffusion.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Config\" />
+  </ItemGroup>
+
+</Project>
