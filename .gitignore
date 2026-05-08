@@ -147,6 +147,8 @@ obj/*
 /WTW.Diffusion.Cli/obj/*
 /WTW.Diffusion.Tests/bin/*
 /WTW.Diffusion.Tests/obj/*
+/WTW.Diffusion.Vsix.Tests/bin/*
+/WTW.Diffusion.Vsix.Tests/obj/*
 /WTW.Diffusion.Cli/bin/*
 /WTW.Diffusion.Cli/obj/*
 /data-foundry.csproj.user

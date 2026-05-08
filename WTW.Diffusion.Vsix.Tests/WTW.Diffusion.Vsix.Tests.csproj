@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>WTW.Diffusion.Vsix.Tests</RootNamespace>
+    <AssemblyName>WTW.Diffusion.Vsix.Tests</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+  </ItemGroup>
+
+  <!-- Reference Core for models used by the tested services -->
+  <ItemGroup>
+    <ProjectReference Include="..\WTW.Diffusion.Core\WTW.Diffusion.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    Compile the VS-independent VSIX service files directly (as linked files).
+    This avoids pulling in the entire VSIX project and its VS SDK dependencies.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Services\ServicesHelper.cs"               Link="Services\ServicesHelper.cs" />
+    <Compile Include="..\Services\GlobalProcessingStateService.cs" Link="Services\GlobalProcessingStateService.cs" />
+    <Compile Include="..\Services\ChangeDetectionResultsService.cs" Link="Services\ChangeDetectionResultsService.cs" />
+    <Compile Include="..\Services\DatabaseSyncStatusService.cs"    Link="Services\DatabaseSyncStatusService.cs" />
+    <Compile Include="..\Services\SettingsChangedService.cs"       Link="Services\SettingsChangedService.cs" />
+  </ItemGroup>
+
+</Project>
