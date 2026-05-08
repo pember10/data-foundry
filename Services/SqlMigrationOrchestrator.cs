@@ -31,12 +31,12 @@ namespace data_foundry.Services
         private readonly string _outputMigrationDir;
         private readonly string _migrationLogSchemaPath;
 
-        private WTW.Diffusion.Core.Services.Database.SqlMigrationRepository _repository;
+        private SqlMigrationRepository _repository;
         private MigrationScriptManager _scriptManager;
-        private WTW.Diffusion.Core.Services.Database.ChangeDetectionService _changeDetection;
-        private WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator _scriptGenerator;
+        private ChangeDetectionService _changeDetection;
+        private MigrationScriptGenerator _scriptGenerator;
         private ShadowDatabaseManager _shadowManager;
-        private ProjectIntegrationService _projectIntegration;
+        private readonly ProjectIntegrationService _projectIntegration;
 
         // PowerShell executor (if enabled)
         private readonly IMigrationExecutor _powerShellExecutor;
@@ -153,7 +153,7 @@ namespace data_foundry.Services
             AzureSqlAuthenticationProvider authProvider = new AzureSqlAuthenticationProvider();
             string accessToken = authProvider.GetAccessToken(_targetServer);
 
-            InitialiseServices(accessToken, migrationsPath, shadowCacheFilePath);
+            InitializeServices(accessToken, migrationsPath, shadowCacheFilePath);
             _projectIntegration = new ProjectIntegrationService(
                 new ProjectFileManager(environment), options.SqlProject);
         }
@@ -251,16 +251,16 @@ namespace data_foundry.Services
             AzureSqlAuthenticationProvider authProvider = new AzureSqlAuthenticationProvider();
             string accessToken = authProvider.GetAccessToken(_targetServer);
 
-            InitialiseServices(accessToken, migrationsPath, shadowCacheFilePath);
+            InitializeServices(accessToken, migrationsPath, shadowCacheFilePath);
         }
 
-        private void InitialiseServices(string accessToken, string migrationsPath, string shadowCacheFilePath)
+        private void InitializeServices(string accessToken, string migrationsPath, string shadowCacheFilePath)
         {
-            _repository    = new WTW.Diffusion.Core.Services.Database.SqlMigrationRepository(_targetServer, accessToken);
+            _repository = new SqlMigrationRepository(_targetServer, accessToken);
             _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
-            _changeDetection = new WTW.Diffusion.Core.Services.Database.ChangeDetectionService(_repository);
-            _scriptGenerator = new WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator(_repository);
-            _shadowManager   = new ShadowDatabaseManager(
+            _changeDetection = new ChangeDetectionService(_repository);
+            _scriptGenerator = new MigrationScriptGenerator(_repository);
+            _shadowManager = new ShadowDatabaseManager(
                 _repository, _scriptManager, _shadowDatabase,
                 _migrationLogSchemaPath, migrationsPath, shadowCacheFilePath);
         }
@@ -309,7 +309,7 @@ namespace data_foundry.Services
 
             // Original C# implementation
             logger = logger ?? ConsoleLogger.Instance;
-            var stopwatch = Stopwatch.StartNew();
+            Stopwatch stopwatch = Stopwatch.StartNew();
             ActivityEntry activity = null;
 
             try
@@ -411,7 +411,7 @@ namespace data_foundry.Services
 
             // Original C# implementation
             logger = logger ?? ConsoleLogger.Instance;
-            var stopwatch = Stopwatch.StartNew();
+            Stopwatch stopwatch = Stopwatch.StartNew();
             ActivityEntry activity = null;
 
             try
@@ -439,12 +439,12 @@ namespace data_foundry.Services
 
                 // Delegate shadow lifecycle to ShadowDatabaseManager
                 logger.Log("Synchronizing shadow database...");
-                _shadowManager.EnsureUpToDate();
+                _ = _shadowManager.EnsureUpToDate();
                 logger.Log($"Shadow database ready ({stopwatch.Elapsed.TotalSeconds:F1}s)");
 
                 // Detect changes
                 logger.Log("Detecting changes between target and shadow...");
-                var detectStopwatch = Stopwatch.StartNew();
+                Stopwatch detectStopwatch = Stopwatch.StartNew();
 
                 logger.Log($"Analyzing {config.Tables.Count} tables...");
                 List<TableChangeSummary> summary = _changeDetection.GetChangesSummary(_targetDatabase, _shadowDatabase, config.Tables);
@@ -609,7 +609,7 @@ namespace data_foundry.Services
             }
 
             // Original C# implementation
-            var stopwatch = Stopwatch.StartNew();
+            Stopwatch stopwatch = Stopwatch.StartNew();
             ActivityEntry activity = null;
 
             try
