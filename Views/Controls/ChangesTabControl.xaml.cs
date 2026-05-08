@@ -7,8 +7,10 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 using data_foundry.Services;
+using data_foundry.Services.Adapters;
 using Microsoft.VisualStudio.Shell;
 
 namespace data_foundry.Views.Controls
@@ -302,14 +304,7 @@ namespace data_foundry.Views.Controls
                 {
                     orchestrator.ExecuteTargetMigrations(
                         requireConfirmation: false,
-                        logger: msg =>
-                        {
-                            ThreadHelper.JoinableTaskFactory.Run(async () =>
-                            {
-                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                OutputWindowLogger.Log(msg);
-                            });
-                        });
+                        logger: new VsLogger());
                 });
 
                 OutputWindowLogger.Log("=== Migrations Applied Successfully ===");
@@ -441,20 +436,7 @@ namespace data_foundry.Views.Controls
                 {
                     changes = orchestrator.DetectAndHandleChanges(
                         action: null, // Don't auto-act on changes
-                        logger: msg =>
-                        {
-                            ThreadHelper.JoinableTaskFactory.Run(async () =>
-                            {
-                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                OutputWindowLogger.Log(msg);
-                                
-                                // Update loading indicator with current step
-                                if (LoadingStatusText != null && LoadingIndicator.Visibility == Visibility.Visible)
-                                {
-                                    LoadingStatusText.Text = msg;
-                                }
-                            });
-                        });
+                        logger: new VsLogger());
                 });
 
                 OutputWindowLogger.Log("=== Change Detection Complete ===");
@@ -581,14 +563,7 @@ namespace data_foundry.Views.Controls
                 // Run revert on background thread
                 await Task.Run(() =>
                 {
-                    orchestrator.RevertChanges(tableNames, msg =>
-                    {
-                        ThreadHelper.JoinableTaskFactory.Run(async () =>
-                        {
-                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                            OutputWindowLogger.Log(msg);
-                        });
-                    });
+                    orchestrator.RevertChanges(tableNames, new VsLogger());
                 });
 
                 OutputWindowLogger.Log("=== Revert Complete ===");

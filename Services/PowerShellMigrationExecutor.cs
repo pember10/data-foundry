@@ -7,6 +7,7 @@ using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using WTW.Diffusion.Core.Helpers;
 using WTW.Diffusion.Core.Models;
+using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Services.Migration;
 using CoreConstants = WTW.Diffusion.Core.Constants;
 
@@ -30,13 +31,13 @@ namespace data_foundry.Services
             _psRunner = new PowerShellScriptRunner(scriptPath);
         }
 
-        public void ExecuteTargetMigrations(bool requireConfirmation, Action<string> logger)
+        public void ExecuteTargetMigrations(bool requireConfirmation, ILogger logger)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             ThreadHelper.JoinableTaskFactory.Run(() => ExecuteTargetMigrationsAsync(requireConfirmation, logger));
         }
 
-        public async Task ExecuteTargetMigrationsAsync(bool requireConfirmation, Action<string> logger)
+        public async Task ExecuteTargetMigrationsAsync(bool requireConfirmation, ILogger logger)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -49,7 +50,7 @@ namespace data_foundry.Services
                 { CoreConstants.Parameters.DetectChanges, false }
             };
 
-            var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
+            var result = await _psRunner.ExecuteAsync(parameters, logger == null ? (System.Action<string>)null : logger.Log).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -59,13 +60,13 @@ namespace data_foundry.Services
             }
         }
 
-        public List<TableChangeSummary> DetectAndHandleChanges(string action, Action<string> logger)
+        public List<TableChangeSummary> DetectAndHandleChanges(string action, ILogger logger)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             return ThreadHelper.JoinableTaskFactory.Run(() => DetectAndHandleChangesAsync(action, logger));
         }
 
-        public async Task<List<TableChangeSummary>> DetectAndHandleChangesAsync(string action, Action<string> logger)
+        public async Task<List<TableChangeSummary>> DetectAndHandleChangesAsync(string action, ILogger logger)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -83,7 +84,7 @@ namespace data_foundry.Services
                 parameters[CoreConstants.Parameters.Action] = action;
             }
 
-            var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
+            var result = await _psRunner.ExecuteAsync(parameters, logger == null ? (System.Action<string>)null : logger.Log).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -157,13 +158,13 @@ namespace data_foundry.Services
             return PowerShellOutputParser.ParseGeneratedScriptPath(result.Output);
         }
 
-        public void RevertChanges(List<string> tableNames, Action<string> logger)
+        public void RevertChanges(List<string> tableNames, ILogger logger)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             ThreadHelper.JoinableTaskFactory.Run(() => RevertChangesAsync(tableNames, logger));
         }
 
-        public async Task RevertChangesAsync(List<string> tableNames, Action<string> logger)
+        public async Task RevertChangesAsync(List<string> tableNames, ILogger logger)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -177,7 +178,7 @@ namespace data_foundry.Services
                 { CoreConstants.Parameters.ConfigPath, GetTableListConfigPath() }
             };
 
-            var result = await _psRunner.ExecuteAsync(parameters, logger).ConfigureAwait(true);
+            var result = await _psRunner.ExecuteAsync(parameters, logger == null ? (System.Action<string>)null : logger.Log).ConfigureAwait(true);
 
             if (!result.Success)
             {

@@ -1,6 +1,8 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using WTW.Diffusion.Core.Abstractions;
+using data_foundry.Services.Adapters;
 using data_foundry.Views.Controls;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell;
@@ -154,14 +156,7 @@ namespace data_foundry
                 {
                     _ = orchestrator.DetectAndHandleChanges(
                         action: null,
-                        logger: msg =>
-                        {
-                            ThreadHelper.JoinableTaskFactory.Run(async () =>
-                            {
-                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                Services.OutputWindowLogger.Log(msg);
-                            });
-                        });
+                        logger: new VsLogger());
                 });
 
                 Services.OutputWindowLogger.Log("=== Auto-Refresh Complete ===");

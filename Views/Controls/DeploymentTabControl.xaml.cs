@@ -2,8 +2,10 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 using data_foundry.Services;
+using data_foundry.Services.Adapters;
 using Microsoft.VisualStudio.Shell;
 
 namespace data_foundry.Views.Controls
@@ -157,15 +159,7 @@ namespace data_foundry.Views.Controls
                         confirmTargetMigration: false,
                         detectChanges: false,
                         action: null,
-                        logger: msg =>
-                        {
-                            ThreadHelper.JoinableTaskFactory.Run(async () =>
-                            {
-                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                AppendLog(msg);
-                                OutputWindowLogger.Log(msg);
-                            });
-                        });
+                        logger: new VsLogger());
                 });
 
                 AppendLog("=== Deployment Complete ===");

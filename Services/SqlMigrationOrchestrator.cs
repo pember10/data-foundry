@@ -8,6 +8,7 @@ using data_foundry.Options;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using Newtonsoft.Json;
+using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Config;
 using WTW.Diffusion.Core.Helpers;
 using WTW.Diffusion.Core.Models;
@@ -298,7 +299,7 @@ namespace data_foundry.Services
         /// <summary>
         /// Executes pending migrations on the target database.
         /// </summary>
-        public void ExecuteTargetMigrations(bool requireConfirmation = false, Action<string> logger = null)
+        public void ExecuteTargetMigrations(bool requireConfirmation = false, ILogger logger = null)
         {
             // Delegate to PowerShell if enabled
             if (_powerShellExecutor != null)
@@ -308,7 +309,7 @@ namespace data_foundry.Services
             }
 
             // Original C# implementation
-            logger = logger ?? Console.WriteLine;
+            logger = logger ?? ConsoleLogger.Instance;
             var stopwatch = Stopwatch.StartNew();
             ActivityEntry activity = null;
 
@@ -322,18 +323,18 @@ namespace data_foundry.Services
                 // Ensure database exists (skip for Azure SQL)
                 if (!_targetServer.Contains(CoreConstants.Azure.AzureSqlDomain))
                 {
-                    logger("Ensuring target database");
+                    logger.Log("Ensuring target database");
                     _repository.CreateDatabaseIfMissing(_targetDatabase);
                 }
 
-                logger("Ensuring migration log table");
+                logger.Log("Ensuring migration log table");
                 _repository.EnsureMigrationLogTable(_targetDatabase, _migrationLogSchemaPath);
 
                 List<MigrationInfo> pendingMigrations = _scriptManager.GetPendingMigrations(_targetDatabase);
 
                 if (pendingMigrations.Count == 0)
                 {
-                    logger("No pending migrations found.");
+                    logger.Log("No pending migrations found.");
 
                     // Update activity
                     if (activity != null)
@@ -349,24 +350,24 @@ namespace data_foundry.Services
 
                 if (requireConfirmation)
                 {
-                    logger("Pending migrations:");
+                    logger.Log("Pending migrations:");
                     foreach (MigrationInfo m in pendingMigrations)
                     {
-                        logger($"  -> {m.FileName} [{m.Id}]");
+                        logger.Log($"  -> {m.FileName} [{m.Id}]");
                     }
 
-                    logger("Execute these migrations? (y/n)");
+                    logger.Log("Execute these migrations? (y/n)");
                     // Note: In a real UI implementation, you'd get user input here
                     // For now, this is just a placeholder
                 }
 
                 foreach (MigrationInfo migration in pendingMigrations)
                 {
-                    logger($"Executing migration {migration.Id} ({migration.FileName}) on {_targetDatabase}");
+                    logger.Log($"Executing migration {migration.Id} ({migration.FileName}) on {_targetDatabase}");
                     _scriptManager.ExecuteMigrationScript(_targetDatabase, migration);
                 }
 
-                logger("Migrations complete.");
+                logger.Log("Migrations complete.");
 
                 // Update activity with success
                 if (activity != null)
@@ -380,7 +381,7 @@ namespace data_foundry.Services
             }
             catch (Exception ex)
             {
-                logger($"ERROR: {ex.Message}");
+                logger.Log($"ERROR: {ex.Message}");
 
                 // Update activity with failure
                 if (activity != null)
@@ -400,7 +401,7 @@ namespace data_foundry.Services
         /// Detects and handles data changes between target and shadow databases.
         /// </summary>
         /// <remarks>TODO: This desperately needs to be refactored, it's too massive!</remarks>
-        public List<TableChangeSummary> DetectAndHandleChanges(MigrationAction? action = null, Action<string> logger = null)
+        public List<TableChangeSummary> DetectAndHandleChanges(MigrationAction? action = null, ILogger logger = null)
         {
             // Delegate to PowerShell if enabled
             if (_powerShellExecutor != null)
@@ -410,7 +411,7 @@ namespace data_foundry.Services
             }
 
             // Original C# implementation
-            logger = logger ?? Console.WriteLine;
+            logger = logger ?? ConsoleLogger.Instance;
             var stopwatch = Stopwatch.StartNew();
             ActivityEntry activity = null;
 
@@ -424,7 +425,7 @@ namespace data_foundry.Services
                 TableListConfig config = LoadConfig();
                 if (config.Tables == null || config.Tables.Count == 0)
                 {
-                    logger("No TrackedTables found in config.");
+                    logger.Log("No TrackedTables found in config.");
 
                     if (activity != null)
                     {
@@ -438,25 +439,25 @@ namespace data_foundry.Services
                 }
 
                 // Delegate shadow lifecycle to ShadowDatabaseManager
-                logger("Synchronizing shadow database...");
+                logger.Log("Synchronizing shadow database...");
                 _shadowManager.EnsureUpToDate();
-                logger($"Shadow database ready ({stopwatch.Elapsed.TotalSeconds:F1}s)");
+                logger.Log($"Shadow database ready ({stopwatch.Elapsed.TotalSeconds:F1}s)");
 
                 // Detect changes
-                logger("Detecting changes between target and shadow...");
+                logger.Log("Detecting changes between target and shadow...");
                 var detectStopwatch = Stopwatch.StartNew();
 
-                logger($"Analyzing {config.Tables.Count} tables...");
+                logger.Log($"Analyzing {config.Tables.Count} tables...");
                 List<TableChangeSummary> summary = _changeDetection.GetChangesSummary(_targetDatabase, _shadowDatabase, config.Tables);
 
                 double detectTime = detectStopwatch.Elapsed.TotalSeconds;
-                logger($"Change detection completed in {detectTime:F1}s ({detectTime / config.Tables.Count:F2}s per table)");
+                logger.Log($"Change detection completed in {detectTime:F1}s ({detectTime / config.Tables.Count:F2}s per table)");
 
                 List<TableChangeSummary> diffs = summary.Where(s => s.HasChanges).ToList();
 
                 if (diffs.Count == 0)
                 {
-                    logger("No changes detected.");
+                    logger.Log("No changes detected.");
 
                     if (activity != null)
                     {
@@ -469,16 +470,16 @@ namespace data_foundry.Services
                     return summary;
                 }
 
-                logger("Changes detected:");
+                logger.Log("Changes detected:");
                 foreach (TableChangeSummary diff in diffs)
                 {
-                    logger($"  {diff.Table}: {diff.Inserts} inserts, {diff.Updates} updates, {diff.Deletes} deletes");
+                    logger.Log($"  {diff.Table}: {diff.Inserts} inserts, {diff.Updates} updates, {diff.Deletes} deletes");
                 }
 
                 if (!action.HasValue)
                 {
                     // In a real UI, you'd prompt the user here
-                    logger("No action specified. Skipping change handling.");
+                    logger.Log("No action specified. Skipping change handling.");
 
                     if (activity != null)
                     {
@@ -497,9 +498,9 @@ namespace data_foundry.Services
                 switch (action.Value)
                 {
                     case MigrationAction.Revert:
-                        logger($"Reverting changes in {_targetDatabase}");
+                        logger.Log($"Reverting changes in {_targetDatabase}");
                         _changeDetection.RevertChanges(_targetDatabase, _shadowDatabase, tables);
-                        logger("Revert complete.");
+                        logger.Log("Revert complete.");
 
                         if (activity != null)
                         {
@@ -512,18 +513,18 @@ namespace data_foundry.Services
                         break;
 
                     case MigrationAction.Migrate:
-                        logger("Generating migration script");
+                        logger.Log("Generating migration script");
                         // In a real UI, you'd prompt for script name
                         string scriptName = $"Migration_{DateTime.Now:yyyyMMdd_HHmmss}";
                         string filePath = _scriptGenerator.GenerateMigrationScript(
                             _targetDatabase, _shadowDatabase, tables, _outputMigrationDir, scriptName);
-                        logger($"Generated migration script: {filePath}");
+                        logger.Log($"Generated migration script: {filePath}");
 
                         // Log the generated script
                         MigrationInfo migrationInfo = _scriptManager.GetMigrationInfoFromFile(filePath);
                         if (migrationInfo != null)
                         {
-                            logger("Logging newly generated migration script to migration log");
+                            logger.Log("Logging newly generated migration script to migration log");
                             _scriptManager.ExecuteMigrationScript(_targetDatabase, migrationInfo, skipExecution: true);
                         }
 
@@ -540,7 +541,7 @@ namespace data_foundry.Services
                         break;
 
                     case MigrationAction.Cancel:
-                        logger("Action cancelled. No changes applied.");
+                        logger.Log("Action cancelled. No changes applied.");
 
                         if (activity != null)
                         {
@@ -557,7 +558,7 @@ namespace data_foundry.Services
             }
             catch (Exception ex)
             {
-                logger($"ERROR: {ex.Message}");
+                logger.Log($"ERROR: {ex.Message}");
 
                 if (activity != null)
                 {
@@ -575,9 +576,9 @@ namespace data_foundry.Services
         /// <summary>
         /// Executes the full migration workflow.
         /// </summary>
-        public void Execute(bool confirmTargetMigration = false, bool detectChanges = false, MigrationAction? action = null, Action<string> logger = null)
+        public void Execute(bool confirmTargetMigration = false, bool detectChanges = false, MigrationAction? action = null, ILogger logger = null)
         {
-            logger = logger ?? Console.WriteLine;
+            logger = logger ?? ConsoleLogger.Instance;
 
             try
             {
@@ -704,7 +705,7 @@ namespace data_foundry.Services
         /// <summary>
         /// Reverts changes in target database to match shadow database.
         /// </summary>
-        public void RevertChanges(List<string> tableNames, Action<string> logger = null)
+        public void RevertChanges(List<string> tableNames, ILogger logger = null)
         {
             // Delegate to PowerShell if enabled
             if (_powerShellExecutor != null)

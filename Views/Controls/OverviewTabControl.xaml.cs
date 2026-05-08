@@ -6,6 +6,8 @@ using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using data_foundry.Options;
 using data_foundry.Services;
+using data_foundry.Services.Adapters;
+using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 using System.Threading.Tasks;
 
@@ -306,14 +308,7 @@ namespace data_foundry.Views.Controls
                 {
                     orchestrator.ExecuteTargetMigrations(
                         requireConfirmation: false,
-                        logger: msg =>
-                        {
-                            ThreadHelper.JoinableTaskFactory.Run(async () =>
-                            {
-                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                OutputWindowLogger.Log(msg);
-                            });
-                        });
+                        logger: new VsLogger());
                 });
 
                 OutputWindowLogger.Log("=== Migration Execution Complete ===");
@@ -363,20 +358,7 @@ namespace data_foundry.Views.Controls
                 {
                     changes = orchestrator.DetectAndHandleChanges(
                         action: null, // Don't auto-act on changes
-                        logger: msg =>
-                        {
-                            ThreadHelper.JoinableTaskFactory.Run(async () =>
-                            {
-                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                OutputWindowLogger.Log(msg);
-                                
-                                // Update loading indicator with current step
-                                if (LoadingStatusText != null && LoadingIndicator.Visibility == Visibility.Visible)
-                                {
-                                    LoadingStatusText.Text = msg;
-                                }
-                            });
-                        });
+                        logger: new VsLogger());
                 });
 
                 OutputWindowLogger.Log("=== Change Detection Complete ===");
@@ -637,14 +619,7 @@ namespace data_foundry.Views.Controls
                 {
                     orchestrator.ExecuteTargetMigrations(
                         requireConfirmation: false,
-                        logger: msg =>
-                        {
-                            ThreadHelper.JoinableTaskFactory.Run(async () =>
-                            {
-                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                                OutputWindowLogger.Log(msg);
-                            });
-                        });
+                        logger: new VsLogger());
                 });
 
                 OutputWindowLogger.Log("=== Migrations Applied Successfully ===");

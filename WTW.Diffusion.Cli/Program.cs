@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using WTW.Diffusion.Cli.Adapters;
 using WTW.Diffusion.Cli.Commands;
 using WTW.Diffusion.Cli.Infrastructure;
+using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 using WTW.Diffusion.Core.Services.Database;
 
@@ -62,7 +63,11 @@ var migrationLogSchemaOpt = new Option<string?>(
     ["--migration-log-schema", "--MigrationLogSchema"],
     "Path to MigrationLogTableDefinition.sql. Defaults to the file beside the executable.");
 
-// ?? Root command ????????????????????????????????????????????????????????????
+var azdoOpt = new Option<bool>(
+    ["--azdo"],
+    "Emit Azure DevOps logging commands (##vso[...]) and publish a pipeline summary tab.");
+
+// 🔧 Root command ─────────────────────────────────────────────────────────────
 
 var root = new RootCommand(
     "WTW Diffusion CLI — drop-in replacement for SqlMetadataAutomation.ps1.")
@@ -78,6 +83,7 @@ var root = new RootCommand(
     scriptNameOpt,
     shadowDatabaseOpt,
     migrationLogSchemaOpt,
+    azdoOpt,
     InitCommand.Build()
 };
 
@@ -94,8 +100,14 @@ root.SetHandler(async (context) =>
     var scriptName             = context.ParseResult.GetValueForOption(scriptNameOpt);
     var shadowDatabase         = context.ParseResult.GetValueForOption(shadowDatabaseOpt);
     var migrationLogSchema     = context.ParseResult.GetValueForOption(migrationLogSchemaOpt);
+    var azdo                   = context.ParseResult.GetValueForOption(azdoOpt);
 
-    var logger = new ConsoleLogger();
+    ILogger logger = azdo ? new AzdoLogger() : new ConsoleLogger();
+
+    // Tracked for pipeline output
+    int pendingMigrationsApplied = 0;
+    List<TableChangeSummary>? changesSummary = null;
+    string? generatedScriptPath = null;
 
     try
     {
@@ -104,7 +116,7 @@ root.SetHandler(async (context) =>
             ? Path.GetFullPath(outputMigrationDir)
             : migrationsPath;
 
-        // ?? Azure SQL token (mirrors Get-AzureSqlAccessToken) ?????????????
+        // 🔑 Azure SQL token (mirrors Get-AzureSqlAccessToken) ─────────────
         string? accessToken = null;
         if (targetServer.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase))
         {
@@ -151,6 +163,7 @@ root.SetHandler(async (context) =>
             {
                 logger.Log($"Executing {migration.FileName} [{migration.Id}]");
                 ctx.ScriptManager.ExecuteMigrationScript(ctx.TargetDatabase, migration);
+                pendingMigrationsApplied++;
             }
 
             logger.Log("Migrations complete.");
@@ -185,6 +198,7 @@ root.SetHandler(async (context) =>
             ctx.TargetDatabase, ctx.ShadowDatabase,
             config.TrackedTables.ToList());
 
+        changesSummary = summary;
         var diffs = summary.Where(s => s.HasChanges).ToList();
 
         if (diffs.Count == 0)
@@ -241,6 +255,7 @@ root.SetHandler(async (context) =>
                     ctx.TargetDatabase, ctx.ShadowDatabase,
                     changedTables, outputMigrationDir, scriptName!);
 
+                generatedScriptPath = filePath;
                 logger.Log($"Generated migration script: {filePath}");
 
                 var migrationInfo = ctx.ScriptManager.GetMigrationInfoFromFile(filePath);
@@ -255,15 +270,25 @@ root.SetHandler(async (context) =>
                 logger.Log("Action cancelled. No changes applied.");
                 break;
         }
+
+        // 📊 Publish pipeline output (only in --azdo mode) ─────────────────
+        if (azdo)
+        {
+            PipelineOutput.Publish(
+                pendingMigrationsApplied,
+                changesSummary,
+                generatedScriptPath,
+                Path.GetTempPath());
+        }
     }
     catch (OperationCanceledException ex)
     {
-        new ConsoleLogger().LogError(ex.Message);
+        logger.LogError(ex.Message);
         Environment.Exit(1);
     }
     catch (Exception ex)
     {
-        new ConsoleLogger().LogError(ex.Message);
+        logger.LogError(ex.Message);
         Environment.Exit(2);
     }
     finally
