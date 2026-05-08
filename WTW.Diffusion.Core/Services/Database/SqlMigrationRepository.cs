@@ -11,7 +11,7 @@ namespace WTW.Diffusion.Core.Services.Database
     /// <summary>
     /// Handles all direct SQL Server database operations for migrations.
     /// </summary>
-    public class SqlMigrationRepository(string targetServer, string accessToken = null)
+    public class SqlMigrationRepository(string targetServer, string accessToken = null) : ISqlMigrationRepository
     {
         private readonly string _targetServer = targetServer ?? throw new ArgumentNullException(nameof(targetServer));
 

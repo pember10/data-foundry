@@ -1,4 +1,4 @@
-using System.Text;
+ï»¿using System.Text;
 using WTW.Diffusion.Cli.Adapters;
 using WTW.Diffusion.Core.Models;
 
@@ -46,7 +46,7 @@ internal static class PipelineOutput
         // --- Markdown summary ---------------------------------------------
         string summaryPath = Path.Combine(tempDir, "wtw-diffusion-summary.md");
         File.WriteAllText(summaryPath, BuildMarkdown(
-            pendingMigrationsApplied, diffs, generatedScriptPath, totalChanges));
+            pendingMigrationsApplied, diffs, generatedScriptPath));
 
         AzdoLogger.UploadSummary(summaryPath);
 
@@ -57,32 +57,33 @@ internal static class PipelineOutput
             AzdoLogger.AddBuildTag("migrations-applied");
     }
 
-    private static string BuildMarkdown(
+    internal static string BuildMarkdown(
         int pendingApplied,
         List<TableChangeSummary> diffs,
-        string? generatedScript,
-        int totalChanges)
+        string? generatedScript)
     {
+        diffs = diffs.Where(d => d.HasChanges).ToList();
+        int totalChanges = diffs.Sum(d => d.Inserts + d.Updates + d.Deletes);
         var sb = new StringBuilder();
-        sb.AppendLine("# WTW Diffusion — Pipeline Summary");
+        sb.AppendLine("# WTW Diffusion - Pipeline Summary");
         sb.AppendLine();
 
         // Migrations section
         sb.AppendLine("## Migrations");
         sb.AppendLine(pendingApplied > 0
-            ? $"? **{pendingApplied}** pending migration(s) applied successfully."
-            : "? No pending migrations — target database is up to date.");
+            ? $"OK: **{pendingApplied}** pending migration(s) applied successfully."
+            : "OK: No pending migrations - target database is up to date.");
         sb.AppendLine();
 
         // Change detection section
         sb.AppendLine("## Data Change Detection");
         if (diffs.Count == 0)
         {
-            sb.AppendLine("? No data changes detected.");
+            sb.AppendLine("OK: No data changes detected.");
         }
         else
         {
-            sb.AppendLine($"?? **{diffs.Count}** table(s) have changes ({totalChanges} total rows affected).");
+            sb.AppendLine($"[!WARNING] **{diffs.Count}** table(s) have changes ({totalChanges} total rows affected).");
             sb.AppendLine();
             sb.AppendLine("| Table | Inserts | Updates | Deletes |");
             sb.AppendLine("|---|---|---|---|");
@@ -95,7 +96,7 @@ internal static class PipelineOutput
         if (!string.IsNullOrWhiteSpace(generatedScript))
         {
             sb.AppendLine("## Generated Migration Script");
-            sb.AppendLine($"?? `{Path.GetFileName(generatedScript)}`");
+            sb.AppendLine($"[Script] `{Path.GetFileName(generatedScript)}`");
             sb.AppendLine();
             sb.AppendLine("> Script has been logged to `__MigrationLog` and is ready for review.");
         }

@@ -29,4 +29,10 @@
     <Folder Include="Config\" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>WTW.Diffusion.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>

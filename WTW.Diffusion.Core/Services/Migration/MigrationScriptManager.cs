@@ -13,12 +13,12 @@ namespace WTW.Diffusion.Core.Services.Migration
     /// <summary>
     /// Manages migration script files and execution.
     /// </summary>
-    public class MigrationScriptManager
+    public class MigrationScriptManager : IMigrationScriptManager
     {
-        private readonly SqlMigrationRepository _repository;
+        private readonly ISqlMigrationRepository _repository;
         private readonly string _migrationsPath;
 
-        public MigrationScriptManager(SqlMigrationRepository repository, string migrationsPath)
+        public MigrationScriptManager(ISqlMigrationRepository repository, string migrationsPath)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _migrationsPath = migrationsPath ?? throw new ArgumentNullException(nameof(migrationsPath));

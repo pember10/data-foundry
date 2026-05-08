@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTW.Diffusion.Core", "WTW.D
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTW.Diffusion.Cli", "WTW.Diffusion.Cli\WTW.Diffusion.Cli.csproj", "{3919D34A-AA76-43A5-8CCF-4D9D587B264B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTW.Diffusion.Tests", "WTW.Diffusion.Tests\WTW.Diffusion.Tests.csproj", "{35361759-92E6-4658-8015-1D9836389885}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,22 @@ Global
 		{3919D34A-AA76-43A5-8CCF-4D9D587B264B}.Release|x86.Build.0 = Release|Any CPU
 		{3919D34A-AA76-43A5-8CCF-4D9D587B264B}.Release|x64.ActiveCfg = Release|Any CPU
 		{3919D34A-AA76-43A5-8CCF-4D9D587B264B}.Release|x64.Build.0 = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|arm64.ActiveCfg = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|arm64.Build.0 = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|x86.Build.0 = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Debug|x64.Build.0 = Debug|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|arm64.ActiveCfg = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|arm64.Build.0 = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|x86.ActiveCfg = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|x86.Build.0 = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|x64.ActiveCfg = Release|Any CPU
+		{35361759-92E6-4658-8015-1D9836389885}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

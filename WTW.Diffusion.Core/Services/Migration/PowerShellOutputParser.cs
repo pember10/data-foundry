@@ -39,10 +39,9 @@ namespace WTW.Diffusion.Core.Services.Migration
                             Deletes = int.TryParse(parts[3], out var del) ? del : 0
                         });
                     }
-                    else if (parts.Length > 0 && !parts[0].StartsWith("--"))
-                    {
-                        inTable = false;
-                    }
+                    // Skip rows that don't have enough parts — don't exit table mode
+                    // Only an empty line or a line starting with a letter (new section)
+                    // after we've already seen valid rows should exit table mode.
                 }
             }
 

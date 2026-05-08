@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
@@ -98,6 +98,11 @@
     <Compile Include="Views\Controls\TabbedContentControl.xaml.cs">
       <DependentUpon>TabbedContentControl.xaml</DependentUpon>
     </Compile>
+    <None Include="WTW.Diffusion.Tests\Cli\PipelineOutputTests.cs" />
+    <None Include="WTW.Diffusion.Tests\Core\MigrationScriptGeneratorTests.cs" />
+    <None Include="WTW.Diffusion.Tests\Core\PathHelperTests.cs" />
+    <None Include="WTW.Diffusion.Tests\Core\PowerShellOutputParserTests.cs" />
+    <None Include="WTW.Diffusion.Tests\Core\SqlIdentifierTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="app.config">

@@ -11,9 +11,9 @@ namespace WTW.Diffusion.Core.Services.Migration
     /// <summary>
     /// Generates migration scripts from detected data changes.
     /// </summary>
-    public class MigrationScriptGenerator(SqlMigrationRepository repository, MigrationScriptManager scriptManager)
+    public class MigrationScriptGenerator(ISqlMigrationRepository repository, IMigrationScriptManager scriptManager)
     {
-        private readonly SqlMigrationRepository _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        private readonly ISqlMigrationRepository _repository = repository ?? throw new ArgumentNullException(nameof(repository));
 
         public string GenerateMigrationScript(string targetDatabase, string shadowDatabase, List<string> tables, string outputDir, string scriptName)
         {

@@ -11,13 +11,13 @@ namespace WTW.Diffusion.Core.Services.Database
     /// <summary>
     /// Detects and handles data changes between target and shadow databases.
     /// </summary>
-    public class ChangeDetectionService(SqlMigrationRepository repository, ILogger logger = null)
+    public class ChangeDetectionService(ISqlMigrationRepository repository, ILogger logger = null)
     {
-        private readonly SqlMigrationRepository _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        private readonly ISqlMigrationRepository _repository = repository ?? throw new ArgumentNullException(nameof(repository));
 
         private readonly string _sqlAndPrefix = " AND ";
 
-        private static void ValidateIdentifier(string identifier, string parameterName)
+        internal static void ValidateIdentifier(string identifier, string parameterName)
         {
             if (string.IsNullOrWhiteSpace(identifier))
                 throw new ArgumentException("Identifier cannot be null or empty.", parameterName);
@@ -44,7 +44,7 @@ namespace WTW.Diffusion.Core.Services.Database
             }
         }
 
-        private static string QuoteIdentifier(string identifier)
+        internal static string QuoteIdentifier(string identifier)
         {
             return "[" + identifier.Replace("]", "]]") + "]";
         }

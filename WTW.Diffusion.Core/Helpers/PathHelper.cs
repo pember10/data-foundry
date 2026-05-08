@@ -96,17 +96,18 @@ namespace WTW.Diffusion.Core.Helpers
             if (paths == null || paths.Length == 0)
                 return null;
 
+            // Any null part makes the result undefined
+            if (paths.Any(p => p == null))
+                return null;
+
             try
             {
-                // Filter out null or empty paths
                 var validPaths = paths.Where(p => !string.IsNullOrWhiteSpace(p)).ToArray();
-                
+
                 if (validPaths.Length == 0)
                     return null;
 
                 var combined = Path.Combine(validPaths);
-                
-                // Validate the combined path
                 return IsValidPath(combined) ? combined : null;
             }
             catch
