@@ -31,12 +31,12 @@ namespace data_foundry.Services
         private readonly string _outputMigrationDir;
         private readonly string _migrationLogSchemaPath;
 
-        private readonly SqlMigrationRepository _repository;
-        private readonly MigrationScriptManager _scriptManager;
-        private readonly ChangeDetectionService _changeDetection;
-        private readonly MigrationScriptGenerator _scriptGenerator;
-        private readonly ShadowDatabaseManager _shadowManager;
-        private readonly ProjectIntegrationService _projectIntegration;
+        private WTW.Diffusion.Core.Services.Database.SqlMigrationRepository _repository;
+        private MigrationScriptManager _scriptManager;
+        private WTW.Diffusion.Core.Services.Database.ChangeDetectionService _changeDetection;
+        private WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator _scriptGenerator;
+        private ShadowDatabaseManager _shadowManager;
+        private ProjectIntegrationService _projectIntegration;
 
         // PowerShell executor (if enabled)
         private readonly IMigrationExecutor _powerShellExecutor;
@@ -153,13 +153,7 @@ namespace data_foundry.Services
             AzureSqlAuthenticationProvider authProvider = new AzureSqlAuthenticationProvider();
             string accessToken = authProvider.GetAccessToken(_targetServer);
 
-            _repository = new SqlMigrationRepository(_targetServer, accessToken);
-            _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
-            _changeDetection = new ChangeDetectionService(_repository);
-            _scriptGenerator = new WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator(_repository);
-            _shadowManager = new ShadowDatabaseManager(
-                _repository, _scriptManager, _shadowDatabase,
-                _migrationLogSchemaPath, migrationsPath, shadowCacheFilePath);
+            InitialiseServices(accessToken, migrationsPath, shadowCacheFilePath);
             _projectIntegration = new ProjectIntegrationService(
                 new ProjectFileManager(environment), options.SqlProject);
         }
@@ -257,11 +251,16 @@ namespace data_foundry.Services
             AzureSqlAuthenticationProvider authProvider = new AzureSqlAuthenticationProvider();
             string accessToken = authProvider.GetAccessToken(_targetServer);
 
-            _repository = new SqlMigrationRepository(_targetServer, accessToken);
+            InitialiseServices(accessToken, migrationsPath, shadowCacheFilePath);
+        }
+
+        private void InitialiseServices(string accessToken, string migrationsPath, string shadowCacheFilePath)
+        {
+            _repository    = new WTW.Diffusion.Core.Services.Database.SqlMigrationRepository(_targetServer, accessToken);
             _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
-            _changeDetection = new ChangeDetectionService(_repository);
+            _changeDetection = new WTW.Diffusion.Core.Services.Database.ChangeDetectionService(_repository);
             _scriptGenerator = new WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator(_repository);
-            _shadowManager = new ShadowDatabaseManager(
+            _shadowManager   = new ShadowDatabaseManager(
                 _repository, _scriptManager, _shadowDatabase,
                 _migrationLogSchemaPath, migrationsPath, shadowCacheFilePath);
         }
@@ -381,7 +380,7 @@ namespace data_foundry.Services
             }
             catch (Exception ex)
             {
-                logger.Log($"ERROR: {ex.Message}");
+                logger.LogError(ex.Message);
 
                 // Update activity with failure
                 if (activity != null)
@@ -558,7 +557,7 @@ namespace data_foundry.Services
             }
             catch (Exception ex)
             {
-                logger.Log($"ERROR: {ex.Message}");
+                logger.LogError(ex.Message);
 
                 if (activity != null)
                 {
