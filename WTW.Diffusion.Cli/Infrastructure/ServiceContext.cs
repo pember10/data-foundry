@@ -80,7 +80,7 @@ internal sealed class ServiceContext
         var repository      = new SqlMigrationRepository(targetServer, accessToken);
         var scriptManager   = new MigrationScriptManager(repository, migrationsPath);
         var changeDetection = new ChangeDetectionService(repository);
-        var scriptGenerator = new MigrationScriptGenerator(repository, scriptManager);
+        var scriptGenerator = new MigrationScriptGenerator(repository);
         var shadowManager   = new ShadowDatabaseManager(
             repository, scriptManager, shadowDatabase,
             migrationLogSchemaPath, migrationsPath, shadowCachePath);

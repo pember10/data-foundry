@@ -156,7 +156,7 @@ namespace data_foundry.Services
             _repository = new SqlMigrationRepository(_targetServer, accessToken);
             _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
             _changeDetection = new ChangeDetectionService(_repository);
-            _scriptGenerator = new MigrationScriptGenerator(_repository, _scriptManager);
+            _scriptGenerator = new WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator(_repository);
             _shadowManager = new ShadowDatabaseManager(
                 _repository, _scriptManager, _shadowDatabase,
                 _migrationLogSchemaPath, migrationsPath, shadowCacheFilePath);
@@ -260,7 +260,7 @@ namespace data_foundry.Services
             _repository = new SqlMigrationRepository(_targetServer, accessToken);
             _scriptManager = new MigrationScriptManager(_repository, migrationsPath);
             _changeDetection = new ChangeDetectionService(_repository);
-            _scriptGenerator = new MigrationScriptGenerator(_repository, _scriptManager);
+            _scriptGenerator = new WTW.Diffusion.Core.Services.Migration.MigrationScriptGenerator(_repository);
             _shadowManager = new ShadowDatabaseManager(
                 _repository, _scriptManager, _shadowDatabase,
                 _migrationLogSchemaPath, migrationsPath, shadowCacheFilePath);
