@@ -194,7 +194,8 @@ the corresponding table in the **shadow**. Any row that differs must be captured
     |   +-- ILogger.cs              Log / LogError / LogWarning / LogDebug
     |   +-- IConfigurationProvider  LocalDatabaseConnection, ShadowDatabaseConnection,
     |   |                           SqlProject, MigrationsFolder, UsePowerShellScript,
-    |   |                           PowerShellScriptPath, TrackedTables
+    |   |                           PowerShellScriptPath, TrackedTables,
+    |   |                           MinSqlServerVersion (null=auto from DSP, 0=skip)
     |   +-- IProjectManager.cs      AddFileToProject / GetProjectPath / GetRelativeFolderPath
     +-- Config/
     |   +-- TableListConfig.cs      { List<string> Tables } -- JSON key: "tables"
@@ -204,6 +205,9 @@ the corresponding table in the **shadow**. Any row that differs must be captured
     |   +-- PathHelper.cs           SanitizePathComponent, IsValidPath, SafeCombine,
     |                               GetSafeDirectoryName, GetExtensionInstallDirectory,
     |                               EnsureDirectoryExists
+    |   +-- SqlProjectDspReader.cs  ReadDsp / ParseMinimumMajorVersion / ValidateAndWarn
+    |                               Reads <DSP> from .sqlproj; maps numeric suffix to SQL
+    |                               Server major version; advisory warning if below minimum
     +-- Models/
     |   +-- ActivityEntry.cs        INotifyPropertyChanged; ActivityType / ActivityStatus enums
     |   +-- DatabaseChange.cs       Basic change metadata
@@ -224,6 +228,7 @@ the corresponding table in the **shadow**. Any row that differs must be captured
         |       static InvalidateCache()
         +-- Database/
         |   +-- ISqlMigrationRepository.cs      Testability interface for all DB operations
+        |   |                                   GetServerMajorVersion(string database)
         |   +-- SqlMigrationRepository.cs       Microsoft.Data.SqlClient implementation
         |   |       ExecuteScriptAndLog()        Atomic: script + __MigrationLog insert in one tx
         |   |       ExecuteSqlScript()           Splits on GO, runs batches
@@ -286,6 +291,7 @@ the corresponding table in the **shadow**. Any row that differs must be captured
     |   |         SqlProject, MigrationsFolder, UsePowerShellScript,
     |   |         AutoRefresh, ShowNotifications, VerboseLogging,
     |   |         TrackedTables (get/set reads/writes tablelist.json)
+    |   |       Build Options: SqlMinServerVersion (empty=auto from DSP, "0"=skip)
     |   |       OnApply: fires SettingsChangedService + DatabaseSyncStatusService
     |   +-- ConnectionStringEditor.cs    UITypeEditor for SQL connection string picker
     |   +-- SqlProjectListConverter.cs   TypeConverter populating SQL project dropdown
@@ -299,6 +305,8 @@ the corresponding table in the **shadow**. Any row that differs must be captured
     |   |         else C# services
     |   |       Methods: ExecuteTargetMigrations(ct), DetectAndHandleChanges(ct),
     |   |         Execute(ct), GenerateMigrationScriptWithName, RevertChanges(ct)
+    |   |       Private: ValidateServerVersion() -- calls SqlProjectDspReader.ValidateAndWarn
+    |   |         at top of ExecuteTargetMigrations()
     |   +-- SqlMigrationOrchestratorFactory.cs
     |   |       Create(package), CreateFromGlobalPackage()
     |   |       CreateAdapters() -> (ILogger, IConfigProvider, IProjectManager)
@@ -329,6 +337,7 @@ the corresponding table in the **shadow**. Any row that differs must be captured
     |       |                                  Respects VerboseLogging flag for LogDebug
     |       +-- VsConfigurationProvider.cs     IConfigurationProvider -> DataFoundryOptions
     |       |                                  TrackedTables reads tablelist.json via DataFoundryConfig
+    |       |                                  MinSqlServerVersion parses SqlMinServerVersion string
     |       +-- VsProjectManager.cs            IProjectManager -> ProjectFileManager (DTE)
     +-- Converters/
     |   +-- NullToVisibilityConverter.cs       WPF value converter
@@ -352,11 +361,9 @@ the corresponding table in the **shadow**. Any row that differs must be captured
 
     WTW.Diffusion.Cli/
     +-- Program.cs
-    |       Top-level statements; root command with all options mirroring
-    |       SqlMetadataAutomation.ps1 parameters (--kebab-case + --PascalCase aliases)
-    |       Flow: acquire Azure token -> ensure DB -> apply pending migrations ->
-    |         (optional) recreate shadow -> detect changes -> Migrate|Revert|Cancel
-    |       Exit codes: 0=ok, 1=cancelled, 2=unhandled error
+    |       18-line top-level entry point; registers 4 subcommands on RootCommand;
+    |       no root handler (shows help when called with no subcommand)
+    |       Exit codes: 0=ok, 1=cancelled, 2=unhandled error, 3=.sqlproj not found
     +-- Adapters/
     |   +-- ConsoleLogger.cs        ILogger -> stdout; colour-coded (White/Red/Yellow/DarkGray)
     |   +-- AzdoLogger.cs           ILogger; wraps ConsoleLogger; emits ##[error], ##[warning],
@@ -367,12 +374,26 @@ the corresponding table in the **shadow**. Any row that differs must be captured
     |                               GetProjectPath: searches solutionRoot for *.sqlproj by name
     +-- Commands/
     |   +-- InitCommand.cs          `wtw-diffusion init [--output dir]`
-    |                               Scaffolds config.json with { "TrackedTables": ["dbo.MyTable"] }
+    |   |                           Scaffolds config.json with { "TrackedTables": ["dbo.MyTable"] }
+    |   +-- DeployCommand.cs        `wtw-diffusion deploy`
+    |   |                           Applies all pending migrations; no shadow interaction
+    |   +-- DetectChangesCommand.cs `wtw-diffusion detect-changes`
+    |   |                           Recreates shadow, diffs tracked tables, applies chosen action
+    |   |                           (Revert | Migrate | Cancel); prompts interactively if --action omitted
+    |   +-- GenerateScriptCommand.cs `wtw-diffusion generate-script`
+    |                               Same as detect-changes with action=Migrate implied
     +-- Infrastructure/
         +-- ServiceContext.cs       ServiceContext.Build(server, db, migrationsPath, ...)
         |                           Wires all Core services; shadow-cache.json beside executable
         +-- PipelineOutput.cs       Publish(pendingCount, changes, scriptPath, tempDir)
-                                    Sets ADO pipeline variables and uploads Markdown summary tab
+        |                           Sets ADO pipeline variables and uploads Markdown summary tab
+        +-- CliOptions.cs           Static factory methods returning new Option<T> instances
+        |                           (safe to add to multiple commands; avoids registration conflicts)
+        +-- CommandHelpers.cs       Shared handler steps: BuildContext, PrepareDatabase,
+        |                           CheckServerVersion, ApplyPendingMigrations,
+        |                           RunChangeDetection, GenerateMigrationScript,
+        |                           AddScriptToProject, PublishAzdoOutput
+        +-- TrackedTablesConfig.cs  { string[] TrackedTables } -- deserialised from config.json
 
 ---
 
@@ -385,6 +406,9 @@ the corresponding table in the **shadow**. Any row that differs must be captured
     |   +-- MigrationScriptGeneratorTests.cs  INSERT/UPDATE/DELETE generation; SQL literal escaping
     |   |                                     Uses Mock<ISqlMigrationRepository>; IDisposable temp dir
     |   +-- PowerShellOutputParserTests.cs    ParseChanges, ParsePendingMigrations, ParseGeneratedScriptPath
+    |   +-- SqlProjectDspReaderTests.cs       ReadDsp (temp XML file), ParseMinimumMajorVersion
+    |                                         (all DSP strings, Azure, unknown), ValidateAndWarn
+    |                                         (override=null/0/positive, DSP present/absent/Azure)
     +-- Cli/
         +-- PipelineOutputTests.cs            BuildMarkdown: no-change, pending, change table, script section
 
@@ -600,29 +624,44 @@ All methods must have cognitive complexity <= 12. Break complex logic into priva
 
 ## CI/CD Integration (`wtw-diffusion` CLI)
 
-The CLI is a drop-in replacement for `SqlMetadataAutomation.ps1`. All parameters have dual aliases:
+The CLI replaces `SqlMetadataAutomation.ps1`. All options have dual aliases:
 `--kebab-case` (new standard) and `--PascalCase` (legacy PS compatibility).
 
-### Root command options
+### Subcommands
+
+#### `wtw-diffusion deploy`
 
 | Option | Required | Description |
 |---|---|---|
 | `--target-database` | Yes | Database name |
 | `--target-server` | Yes | SQL Server hostname or instance |
 | `--migrations-path` | Yes | Path to migration scripts folder |
-| `--detect-changes` | | Flag; triggers shadow rebuild + diff |
-| `--action` | | `Revert` \| `Migrate` \| `Cancel`; prompts if omitted |
-| `--confirm-target-migration` | | Prompt before applying pending migrations |
-| `--config-path` | | Path to `config.json`; defaults to `./config.json` |
-| `--output-migration-dir` | | Where to write generated scripts; defaults to `--migrations-path` |
-| `--script-name` | | Script filename (no extension); prompts if omitted |
-| `--shadow-database` | | Defaults to `{TargetDatabase}_Shadow` |
+| `--confirm-target-migration` | | Prompt before executing pending migrations |
 | `--migration-log-schema` | | Path to `MigrationLogTableDefinition.sql`; defaults to beside executable |
+| `--sql-project` | | `.sqlproj` name for DSP version check |
+| `--solution-root` | | Directory to search for `.sqlproj`; defaults to parent of `--migrations-path` |
+| `--min-sql-version` | | Override minimum SQL Server version (0=skip, null=auto from DSP) |
 | `--azdo` | | ADO mode: emit `##[error]`, `##vso[...]` commands and upload summary tab |
 
-### Subcommands
+#### `wtw-diffusion detect-changes`
 
-- `wtw-diffusion init [--output dir]` -- creates a starter `config.json`
+All `deploy` options plus:
+
+| Option | Required | Description |
+|---|---|---|
+| `--shadow-database` | | Shadow DB name; defaults to `{TargetDatabase}_Shadow` |
+| `--config-path` | | Path to `config.json`; defaults to `./config.json` |
+| `--action` | | `Revert` \| `Migrate` \| `Cancel`; prompts interactively if omitted |
+| `--output-migration-dir` | | Where to write generated scripts; defaults to `--migrations-path` |
+| `--script-name` | | Script filename (no extension); prompts if omitted |
+
+#### `wtw-diffusion generate-script`
+
+Same options as `detect-changes` minus `--action` (Migrate is implied).
+
+#### `wtw-diffusion init [--output dir]`
+
+Creates a starter `config.json`.
 
 ### Azure DevOps pipeline variables set by `--azdo`
 
@@ -641,6 +680,7 @@ The CLI is a drop-in replacement for `SqlMetadataAutomation.ps1`. All parameters
 | `0` | Success |
 | `1` | Cancelled by user (`OperationCanceledException`) |
 | `2` | Unhandled error |
+| `3` | `.sqlproj` not found (`--sql-project` specified but project could not be located) |
 
 ---
 
@@ -669,7 +709,7 @@ JSON key is `"TrackedTables"` (note: different casing from VSIX). Generated by `
 
 - **VSIX must be built through Visual Studio** -- `dotnet build` / MSBuild direct invocation fails (WPF/WinFx targets require VS toolchain)
 - **Core and CLI** can be built independently with `dotnet build`
-- **Tests**: `dotnet test WTW.Diffusion.Tests` -- 54 tests, no VS required
+- **Tests**: `dotnet test WTW.Diffusion.Tests` -- 80 tests, no VS required
 - **Vsix.Tests**: compiles VSIX service files as linked files to avoid VS SDK dependency; run via VS Test Explorer
 - After deleting VSIX source files, delete `obj\` before rebuilding to clear CS2001 ghost errors
 - `InternalsVisibleTo("WTW.Diffusion.Tests")` is set in both Core and CLI csproj files
@@ -718,71 +758,10 @@ VS-coupled code (DTE, Output Window, WPF) is covered by manual end-to-end testin
 
 ## Remaining Work
 
-### Medium Priority
-
-#### Minimum SQL Server version check from `.sqlproj` DSP
-
-SSDT `.sqlproj` files declare their target SQL Server version via the `<DSP>` (Database Schema Provider) property in the first `<PropertyGroup>`, e.g.:
-
-```
-Microsoft.Data.Tools.Schema.Sql.Sql150DatabaseSchemaProvider      ->  SQL Server 2019 (major version 15)
-Microsoft.Data.Tools.Schema.Sql.Sql130DatabaseSchemaProvider      ->  SQL Server 2016 (major version 13)
-Microsoft.Data.Tools.Schema.Sql.SqlAzureV12DatabaseSchemaProvider ->  Azure SQL (skip check)
-```
-
-Numeric suffix maps to SQL Server major version: `Sql90`->9, `Sql100`->10, `Sql110`->11, `Sql120`->12, `Sql130`->13, `Sql140`->14, `Sql150`->15, `Sql160`->16.
-
-**Override semantics for `int? MinSqlServerVersion`:**
-- `null` = auto-detect from `.sqlproj` DSP (default for both surfaces)
-- `0` = skip check entirely
-- positive int = enforce that version as the minimum, ignoring DSP (e.g. `13` for SQL Server 2016)
-
-**Note:** The CLI bypasses `IConfigurationProvider` entirely (uses `ServiceContext` directly), so the validation logic accepts the override as a direct parameter rather than reading from configuration internally.
-
-**Implementation steps:**
-
-1. **`WTW.Diffusion.Core/Helpers/SqlProjectDspReader.cs`** (new static class)
-   - `ReadDsp(string? projectFilePath): string?` -- `XDocument.Load(projectFilePath)`, find first `<DSP>` in any `<PropertyGroup>`, return its value or `null`
-   - `ParseMinimumMajorVersion(string? dsp): int?` -- regex `Sql(\d+)DatabaseSchemaProvider`, divide by 10 if >= 100 (e.g. `150`->15, `100`->10), use as-is if < 100 (e.g. `90`->9). Return `null` for Azure (`SqlAzureV12`) or unrecognised providers.
-   - `ValidateAndWarn(string targetDb, ISqlMigrationRepository repo, ILogger logger, int? minVersionOverride, string? projectFilePath)` -- shared entry point for both VSIX and CLI:
-     - `minVersionOverride == 0` -> return (skip)
-     - `minVersionOverride == null` -> `ReadDsp(projectFilePath)` + `ParseMinimumMajorVersion`; if still null -> return silently
-     - effective min = `minVersionOverride ?? dspMin`
-     - query `GetServerMajorVersion` -> `_logger.Log` if ok, `_logger.LogWarning` if below (advisory, no throw)
-
-2. **`ISqlMigrationRepository` + `SqlMigrationRepository`** -- add `int GetServerMajorVersion(string database)`
-   - Query: `SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS INT)`
-   - Returns the server major version integer (e.g. 15 for SQL Server 2019).
-
-3. **`IConfigurationProvider`** -- add `int? MinSqlServerVersion { get; }` (`null` = auto from DSP)
-
-4. **`DataFoundryOptions`** (VSIX) -- add `string SqlMinServerVersion` under "Build Options":
-   - `DefaultValue("")` -- empty = auto-detect from DSP
-   - Description: `"Minimum SQL Server major version to enforce (e.g. 13 for 2016, 15 for 2019). Leave blank to read from the .sqlproj DSP. Set to 0 to skip the check."`
-
-5. **`VsConfigurationProvider`** -- implement `MinSqlServerVersion`:
-   - empty/null -> `null` (auto); `"0"` -> `0` (skip); valid integer string -> that value
-
-6. **`SqlMigrationOrchestrator`** -- add private `ValidateServerVersion()`, called at top of `ExecuteTargetMigrations()`:
-   - `minVersionOverride = _configuration.MinSqlServerVersion`
-   - `projectFilePath = _projectManager.GetProjectPath(_configuration.SqlProject)`
-   - Delegates to `SqlProjectDspReader.ValidateAndWarn(...)`
-
-7. **`Program.cs`** (CLI) -- add `--min-sql-version` (`Option<int?>`, no default -> `null`):
-   - Description: `"Minimum SQL Server major version (e.g. 13 for 2016, 15 for 2019). Defaults to reading from --sql-project DSP. Set to 0 to skip."`
-   - Call `SqlProjectDspReader.ValidateAndWarn(ctx.TargetDatabase, ctx.Repository, logger, minSqlVersion, ctx.ProjectManager?.GetProjectPath(sqlProject))` before migrations execute
-
-8. **Tests** (`WTW.Diffusion.Tests`):
-   - `SqlProjectDspReaderTests` -- `ReadDsp` (temp XML file), `ParseMinimumMajorVersion` (all DSP strings, Azure, unknown), `ValidateAndWarn` (override = null/0/positive, DSP present/absent/Azure)
-   - Extend orchestrator tests to verify `GetServerMajorVersion` is called and the correct log/warning is emitted
-
-**Note:** `IProjectManager` is not changed -- `ReadDsp` takes a file path directly, obtained via the existing `GetProjectPath()` call.
-
 ### Low Priority
 
 | Item | Detail |
 |---|---|
-| **`detect-changes` / `generate-script` / `deploy` as CLI subcommands** | Currently all logic is in the root command handler in `Program.cs`. Splitting into subcommands would improve discoverability. |
 | **GitHub Actions workflow template** | A reusable workflow YAML for `.github/workflows/`, parallel to the ADO pipeline example. |
 | **Publish `wtw-diffusion` to an internal NuGet feed** | Enables `dotnet tool install wtw-diffusion` in pipelines without a file copy step. |
 | **Migrate VSIX to `net8.0-windows` SDK-style** | Unblocks PowerShell 7, async improvements, and modern SDK features. Requires VS 2022 17.9+. Should be bundled with any effort to upgrade `System.Management.Automation`. |
@@ -797,3 +776,5 @@ Numeric suffix maps to SQL Server major version: `Sql90`->9, `Sql100`->10, `Sql1
 | **`RevertChanges` efficiency** | ✅ Done — `SqlMigrationOrchestrator.RevertChanges(List<string> tableNames, CancellationToken ct)` calls `ChangeDetectionService.RevertChanges()` directly, skipping shadow sync. `ChangesTabControl` passes the already-known `changesWithDiffs` table names. |
 | **`CancellationToken` in CLI** | ✅ Done — `context.GetCancellationToken()` is extracted at handler start and passed to `ctx.ShadowManager.Recreate(ct)`. Ctrl+C is handled automatically by `System.CommandLine`. |
 | **`FileSystemProjectManager` in CLI Migrate path** | ✅ Done — `ServiceContext.Build()` wires `FileSystemProjectManager` when `solutionRoot` is provided; CLI Migrate path calls `ctx.ProjectManager.AddFileToProject(...)` after generating a script. |
+| **Minimum SQL Server version check from `.sqlproj` DSP** | ✅ Done — `SqlProjectDspReader.ValidateAndWarn` (Core); `ISqlMigrationRepository.GetServerMajorVersion`; `IConfigurationProvider.MinSqlServerVersion`; `DataFoundryOptions.SqlMinServerVersion`; `SqlMigrationOrchestrator.ValidateServerVersion()`; CLI `--min-sql-version` on all three subcommands; 14 tests in `SqlProjectDspReaderTests`. |
+| **CLI subcommands (`deploy` / `detect-changes` / `generate-script`)** | ✅ Done — `Program.cs` stripped to 18 lines; logic extracted to `Commands/` + `Infrastructure/CommandHelpers.cs` + `Infrastructure/CliOptions.cs`; 80 tests passing. |
