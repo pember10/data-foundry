@@ -8,9 +8,9 @@ namespace WTW.Diffusion.Tests.Core;
 
 /// <summary>
 /// Tests for MigrationScriptGenerator SQL output.
-/// SqlMigrationRepository is mocked — no database required.
+/// SqlMigrationRepository is mocked ï¿½ no database required.
 /// </summary>
-public class MigrationScriptGeneratorTests
+public class MigrationScriptGeneratorTests : IDisposable
 {
     private const string TargetDb = "TargetDb";
     private const string ShadowDb = "ShadowDb";
@@ -182,5 +182,5 @@ public class MigrationScriptGeneratorTests
         File.ReadAllText(path).Should().Contain("'O''Brien'");
     }
 
-    public void Dispose() => Directory.Delete(_outputDir, recursive: true);
+    void IDisposable.Dispose() => Directory.Delete(_outputDir, recursive: true);
 }

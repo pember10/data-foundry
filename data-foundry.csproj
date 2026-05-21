@@ -4,6 +4,40 @@
     <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug %28VS2026%29|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\Debug %28VS2026%29\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug %28VS2026%29|x86'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\x86\Debug %28VS2026%29\</OutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug %28VS2026%29|arm64'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\arm64\Debug %28VS2026%29\</OutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release %28VS2026%29|AnyCPU'">
+    <OutputPath>bin\Release %28VS2026%29\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release %28VS2026%29|x86'">
+    <OutputPath>bin\x86\Release %28VS2026%29\</OutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release %28VS2026%29|arm64'">
+    <OutputPath>bin\arm64\Release %28VS2026%29\</OutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    </PropertyGroup>
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -16,6 +50,7 @@
     <RootNamespace>data_foundry</RootNamespace>
     <AssemblyName>data-foundry</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <LangVersion>latest</LangVersion>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <UseCodebase>true</UseCodebase>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
@@ -27,7 +62,7 @@
     <StartProgram Condition="'$(DevEnvDir)' != ''">$(DevEnvDir)devenv.exe</StartProgram>
     <StartArguments>/rootsuffix Exp</StartArguments>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug %28VS2022%29|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -36,7 +71,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release %28VS2022%29|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
@@ -76,7 +111,6 @@
     <Compile Include="Services\ProjectIntegrationService.cs" />
     <Compile Include="Services\ServicesHelper.cs" />
     <Compile Include="Services\SettingsChangedService.cs" />
-    <Compile Include="Services\SqlMigrationOrchestrator.cs" />
     <Compile Include="Services\SqlMigrationOrchestratorFactory.cs" />
     <Compile Include="Services\TrackedTablesManager.cs" />
     <Compile Include="ShowDataFoundryToolWindowCommand.cs" />
@@ -98,6 +132,8 @@
     <Compile Include="Views\Controls\TabbedContentControl.xaml.cs">
       <DependentUpon>TabbedContentControl.xaml</DependentUpon>
     </Compile>
+    <None Include=".vsconfig" />
+    <None Include="PLAN.md" />
     <None Include="WTW.Diffusion.Tests\Cli\PipelineOutputTests.cs" />
     <None Include="WTW.Diffusion.Tests\Core\MigrationScriptGeneratorTests.cs" />
     <None Include="WTW.Diffusion.Tests\Core\PathHelperTests.cs" />
@@ -105,6 +141,11 @@
     <None Include="WTW.Diffusion.Tests\Core\SqlIdentifierTests.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="$(NuGetPackageRoot)system.threading.tasks.extensions\4.6.3\lib\net462\System.Threading.Tasks.Extensions.dll" Condition="Exists('$(NuGetPackageRoot)system.threading.tasks.extensions\4.6.3\lib\net462\System.Threading.Tasks.Extensions.dll')">
+      <Link>System.Threading.Tasks.Extensions.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <Content Include="app.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
@@ -179,6 +220,9 @@
     <PackageReference Include="Microsoft.Identity.Client">
       <Version>4.83.3</Version>
     </PackageReference>
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
+    <PackageReference Include="System.Buffers" Version="4.5.1" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
   </ItemGroup>
   <ItemGroup>
     <VSCTCompile Include="DataFoundry.vsct">
@@ -227,3 +271,5 @@
   </Target>
   -->
 </Project>
+
+

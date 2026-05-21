@@ -56,6 +56,10 @@ A Visual Studio extension (VSIX) that detects data changes between a target SQL 
 ### Change detection
 - Use `HASHBYTES('SHA2_256', ...)` with `ISNULL(CONVERT(NVARCHAR(MAX), col), '#NULL#')` for update detection - never `CHECKSUM()` (collision-prone)
 
+### General Practices
+- All methods should be limited to a cognitive complexity of 12 or less - break down complex logic into smaller methods
+- Prefer `var` to explicit types, except when the type is not obvious from the right-hand side (e.g. use `var result = GetDataTableResult()` instead of `DataTable result = GetDataTableResult()`)
+
 ## Key Files
 
 | File | Purpose |

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 
+#pragma warning disable VSTHRD100 // Avoid async void methods — all async void here are WPF event handlers with try/catch
 namespace data_foundry.Views.Controls
 {
     public partial class SettingsTabControl : UserControl

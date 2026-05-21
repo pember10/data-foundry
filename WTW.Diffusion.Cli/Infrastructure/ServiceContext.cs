@@ -1,4 +1,5 @@
-﻿using WTW.Diffusion.Core.Services;
+﻿using WTW.Diffusion.Cli.Adapters;
+using WTW.Diffusion.Core.Services;
 using WTW.Diffusion.Core.Services.Database;
 using WTW.Diffusion.Core.Services.Migration;
 
@@ -21,6 +22,12 @@ internal sealed class ServiceContext
     public string ShadowDatabase { get; }
     public string MigrationsPath { get; }
 
+    /// <summary>
+    /// Project manager for adding generated scripts to the .sqlproj.
+    /// Null when --solution-root / --sql-project were not supplied.
+    /// </summary>
+    public FileSystemProjectManager? ProjectManager { get; }
+
     private ServiceContext(
         SqlMigrationRepository repository,
         MigrationScriptManager scriptManager,
@@ -29,7 +36,8 @@ internal sealed class ServiceContext
         ShadowDatabaseManager shadowManager,
         string targetDatabase,
         string shadowDatabase,
-        string migrationsPath)
+        string migrationsPath,
+        FileSystemProjectManager? projectManager = null)
     {
         Repository      = repository;
         ScriptManager   = scriptManager;
@@ -39,6 +47,7 @@ internal sealed class ServiceContext
         TargetDatabase  = targetDatabase;
         ShadowDatabase  = shadowDatabase;
         MigrationsPath  = migrationsPath;
+        ProjectManager  = projectManager;
     }
 
     /// <summary>
@@ -53,13 +62,18 @@ internal sealed class ServiceContext
     /// Path to MigrationLogTableDefinition.sql. Defaults to the file beside the executable.
     /// </param>
     /// <param name="accessToken">Optional Azure SQL access token.</param>
+    /// <param name="solutionRoot">
+    /// Root directory to search for .sqlproj files.
+    /// When supplied, <see cref="ProjectManager"/> is populated so callers can add generated scripts to the project.
+    /// </param>
     public static ServiceContext Build(
         string targetServer,
         string targetDatabase,
         string migrationsPath,
-        string? shadowDatabase       = null,
+        string? shadowDatabase         = null,
         string? migrationLogSchemaPath = null,
-        string? accessToken          = null)
+        string? accessToken            = null,
+        string? solutionRoot           = null)
     {
         if (!Directory.Exists(migrationsPath))
             throw new DirectoryNotFoundException($"MigrationsPath not found: {migrationsPath}");
@@ -85,8 +99,12 @@ internal sealed class ServiceContext
             repository, scriptManager, shadowDatabase,
             migrationLogSchemaPath, migrationsPath, shadowCachePath);
 
+        FileSystemProjectManager? projectManager = solutionRoot is not null
+            ? new FileSystemProjectManager(solutionRoot)
+            : null;
+
         return new ServiceContext(
             repository, scriptManager, changeDetection, scriptGenerator, shadowManager,
-            targetDatabase, shadowDatabase, migrationsPath);
+            targetDatabase, shadowDatabase, migrationsPath, projectManager);
     }
 }

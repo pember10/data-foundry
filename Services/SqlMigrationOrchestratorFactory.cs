@@ -4,6 +4,7 @@ using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using System;
 using WTW.Diffusion.Core.Abstractions;
+using WTW.Diffusion.Core.Services;
 
 namespace data_foundry.Services
 {
@@ -14,6 +15,7 @@ namespace data_foundry.Services
     {
         /// <summary>
         /// Creates a SqlMigrationOrchestrator using the current package options.
+        /// Path defaults for migrationLogSchema and shadowCache are resolved inside the Core orchestrator.
         /// </summary>
         public static SqlMigrationOrchestrator Create(AsyncPackage package)
         {
@@ -22,13 +24,8 @@ namespace data_foundry.Services
             if (package == null)
                 throw new ArgumentNullException(nameof(package));
 
-            if (!(package.GetDialogPage(typeof(DataFoundryOptions)) is DataFoundryOptions options))
-                throw new InvalidOperationException("Unable to retrieve options from package.");
-
-            if (!(Package.GetGlobalService(typeof(DTE)) is DTE environment))
-                throw new InvalidOperationException("Unable to retrieve Development Tool Environment service.");
-
-            return new SqlMigrationOrchestrator(options, environment);
+            var (logger, configuration, projectManager) = CreateAdapters(package);
+            return new SqlMigrationOrchestrator(logger, configuration, projectManager);
         }
 
         /// <summary>
@@ -46,8 +43,6 @@ namespace data_foundry.Services
 
         /// <summary>
         /// Creates the three VS adapter implementations of the Core abstractions.
-        /// These are used when wiring the orchestrator to ILogger, IConfigurationProvider,
-        /// and IProjectManager (step 3 — Core cleanup).
         /// </summary>
         public static (ILogger Logger, IConfigurationProvider Configuration, IProjectManager ProjectManager)
             CreateAdapters(AsyncPackage package)

@@ -7,6 +7,7 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <Configurations>Debug;Release;Debug (VS2026);Release (VS2026)</Configurations>
   </PropertyGroup>
 
   <ItemGroup>

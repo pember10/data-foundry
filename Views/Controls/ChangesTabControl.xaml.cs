@@ -10,9 +10,9 @@ using System.Windows.Media;
 using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 using data_foundry.Services;
-using data_foundry.Services.Adapters;
 using Microsoft.VisualStudio.Shell;
 
+#pragma warning disable VSTHRD100 // Avoid async void methods â€” all async void here are WPF event handlers with try/catch
 namespace data_foundry.Views.Controls
 {
     public partial class ChangesTabControl : UserControl
@@ -58,11 +58,18 @@ namespace data_foundry.Views.Controls
 
         private async void OnResultsUpdated(object sender, List<TableChangeSummary> results)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-            if (results != null)
+            try
             {
-                UpdateGridWithResults(results);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                if (results != null)
+                {
+                    UpdateGridWithResults(results);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error updating results: {ex.Message}");
             }
         }
 
@@ -85,28 +92,34 @@ namespace data_foundry.Views.Controls
 
         private async void OnProcessingStateChanged(object sender, ProcessingStateChangedEventArgs e)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            UpdateButtonStates();
-            
-            if (e.IsProcessing)
+            try
             {
-                ShowProcessingState(e.CurrentOperation);
-            }
-            else if (e.CompletionStatus.HasValue)
-            {
-                // Show completion state
-                switch (e.CompletionStatus.Value)
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                UpdateButtonStates();
+
+                if (e.IsProcessing)
                 {
-                    case ProcessingCompletionStatus.Success:
-                        ShowSuccessState(e.CompletionMessage ?? "Completed successfully!");
-                        break;
-                    case ProcessingCompletionStatus.Error:
-                        ShowErrorState(e.CompletionMessage ?? "Operation failed");
-                        break;
-                    case ProcessingCompletionStatus.Cancelled:
-                        ShowReadyState();
-                        break;
+                    ShowProcessingState(e.CurrentOperation);
                 }
+                else if (e.CompletionStatus.HasValue)
+                {
+                    switch (e.CompletionStatus.Value)
+                    {
+                        case ProcessingCompletionStatus.Success:
+                            ShowSuccessState(e.CompletionMessage ?? "Completed successfully!");
+                            break;
+                        case ProcessingCompletionStatus.Error:
+                            ShowErrorState(e.CompletionMessage ?? "Operation failed");
+                            break;
+                        case ProcessingCompletionStatus.Cancelled:
+                            ShowReadyState();
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error handling processing state change: {ex.Message}");
             }
         }
 
@@ -304,7 +317,7 @@ namespace data_foundry.Views.Controls
                 {
                     orchestrator.ExecuteTargetMigrations(
                         requireConfirmation: false,
-                        logger: new VsLogger());
+                        ct: GlobalProcessingStateService.Instance.CancellationToken);
                 });
 
                 OutputWindowLogger.Log("=== Migrations Applied Successfully ===");
@@ -315,6 +328,11 @@ namespace data_foundry.Views.Controls
                 DatabaseSyncStatusService.Instance.NotifySyncStatusChanged();
                 
                 // No success message box - status indicator shows success
+            }
+            catch (OperationCanceledException)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.Log("=== Migration application cancelled ===");
             }
             catch (Exception ex)
             {
@@ -345,7 +363,7 @@ namespace data_foundry.Views.Controls
             // Confirm generation - keep this message box as requested
             var confirmResult = MessageBox.Show(
                 $"Generate migration script for {changesWithDiffs.Count} table(s) with changes?\n\n" +
-                string.Join("\n", changesWithDiffs.Select(c => $"• {c.Table}")),
+                string.Join("\n", changesWithDiffs.Select(c => $"ï¿½ {c.Table}")),
                 "Confirm Script Generation",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -387,7 +405,7 @@ namespace data_foundry.Views.Controls
             var confirmResult = MessageBox.Show(
                 $"?? REVERT CHANGES - WARNING ??\n\n" +
                 $"This will PERMANENTLY DELETE data changes in your local database for {changesWithDiffs.Count} table(s):\n\n" +
-                string.Join("\n", changesWithDiffs.Select(c => $"• {c.Table}")) + "\n\n" +
+                string.Join("\n", changesWithDiffs.Select(c => $"ï¿½ {c.Table}")) + "\n\n" +
                 $"Your database will be synchronized to match the clean migration state.\n\n" +
                 $"This action CANNOT be undone!\n\n" +
                 $"Do you want to continue?",
@@ -436,7 +454,7 @@ namespace data_foundry.Views.Controls
                 {
                     changes = orchestrator.DetectAndHandleChanges(
                         action: null, // Don't auto-act on changes
-                        logger: new VsLogger());
+                        ct: GlobalProcessingStateService.Instance.CancellationToken);
                 });
 
                 OutputWindowLogger.Log("=== Change Detection Complete ===");
@@ -526,6 +544,12 @@ namespace data_foundry.Views.Controls
                 
                 // No message box - success status and output window show details
             }
+            catch (OperationCanceledException)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.Log("=== Script generation cancelled ===");
+                ShowErrorState("Script generation cancelled");
+            }
             catch (Exception ex)
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -557,13 +581,15 @@ namespace data_foundry.Views.Controls
                 OutputWindowLogger.Log($"Reverting changes for {tableNames.Count} table(s):");
                 foreach (var table in tableNames)
                 {
-                    OutputWindowLogger.Log($"  • {table}");
+                    OutputWindowLogger.Log($"  ï¿½ {table}");
                 }
 
                 // Run revert on background thread
                 await Task.Run(() =>
                 {
-                    orchestrator.RevertChanges(tableNames, new VsLogger());
+                    orchestrator.RevertChanges(
+                        tableNames,
+                        ct: GlobalProcessingStateService.Instance.CancellationToken);
                 });
 
                 OutputWindowLogger.Log("=== Revert Complete ===");
@@ -579,6 +605,12 @@ namespace data_foundry.Views.Controls
                     "Revert Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+            }
+            catch (OperationCanceledException)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.Log("=== Revert cancelled ===");
+                ShowErrorState("Revert cancelled");
             }
             catch (Exception ex)
             {

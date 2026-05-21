@@ -37,5 +37,20 @@ namespace data_foundry.Services.Adapters
                 return config.Tables?.ToArray() ?? new string[0];
             }
         }
+
+        public int? MinSqlServerVersion
+        {
+            get
+            {
+                var raw = _options.SqlMinServerVersion;
+                if (string.IsNullOrWhiteSpace(raw))
+                    return null; // auto-detect from DSP
+
+                if (int.TryParse(raw.Trim(), out int value))
+                    return value; // 0 = skip, positive = override
+
+                return null; // unrecognised value -> auto
+            }
+        }
     }
 }

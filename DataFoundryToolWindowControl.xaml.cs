@@ -1,12 +1,11 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-using WTW.Diffusion.Core.Abstractions;
-using data_foundry.Services.Adapters;
 using data_foundry.Views.Controls;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using Task = System.Threading.Tasks.Task;
+using WTW.Diffusion.Core.Services;
 
 namespace data_foundry
 {
@@ -34,10 +33,20 @@ namespace data_foundry
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 InitializeDteEvents();
                 UpdateContent();
+
+                // If a solution is already open when the tool window loads, treat it
+                // the same as OnSolutionOpened — the event won't fire retroactively.
+                bool solutionOpen = _environment?.Solution?.IsOpen == true;
+                System.Diagnostics.Debug.WriteLine(
+                    $"[WTW] OnLoaded: environment={(_environment == null ? "NULL" : "OK")}, solutionOpen={solutionOpen}");
+
+                if (solutionOpen)
+                {
+                    OnSolutionOpened();
+                }
             }
             catch (Exception ex)
             {
-                // Log the exception - async void methods can crash the process if unhandled
                 System.Diagnostics.Debug.WriteLine($"Error metadata automation tool window: {ex}");
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 _ = MessageBox.Show($"Failed to initialize WTW Diffusion tool: {ex.Message}",
@@ -66,16 +75,41 @@ namespace data_foundry
             // Update UI first
             _ = UpdateContentAsync();
 
-            // Check if auto-refresh is enabled
-            data_foundryPackage package = data_foundryPackage.Instance;
-            if (package != null)
+            // Fire auto-refresh on a background thread so we don't block the solution-open event.
+            // GetServiceAsync ensures the package is fully initialised before we read its options,
+            // which fixes the race between BackgroundLoad and the tool window Loaded event.
+            _ = TryAutoRefreshAsync();
+        }
+
+        private async Task TryAutoRefreshAsync()
+        {
+            try
             {
-                Options.DataFoundryOptions options = (Options.DataFoundryOptions)package.GetDialogPage(typeof(Options.DataFoundryOptions));
+                // Brief yield so the UI thread can finish rendering before we start work
+                await Task.Yield();
+
+                var package = await AsyncServiceProvider.GlobalProvider
+                    .GetServiceAsync(typeof(data_foundryPackage)) as data_foundryPackage
+                    ?? data_foundryPackage.Instance;
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[WTW] TryAutoRefreshAsync: package={(package == null ? "NULL" : "OK")}");
+
+                if (package == null)
+                    return;
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                var options = (Options.DataFoundryOptions)package.GetDialogPage(typeof(Options.DataFoundryOptions));
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[WTW] TryAutoRefreshAsync: AutoRefresh={options.AutoRefresh}");
+
                 if (options.AutoRefresh)
-                {
-                    // Trigger auto-refresh on background thread
                     _ = TriggerAutoRefreshAsync();
-                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[WTW] TryAutoRefreshAsync failed: {ex.Message}");
             }
         }
 
@@ -149,14 +183,12 @@ namespace data_foundry
                 Services.OutputWindowLogger.Log("=== Auto-Refresh: Detecting Database Changes ===");
 
                 // Create orchestrator on UI thread
-                Services.SqlMigrationOrchestrator orchestrator = Services.SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
+                SqlMigrationOrchestrator orchestrator = Services.SqlMigrationOrchestratorFactory.CreateFromGlobalPackage();
 
                 // Now run detection on background thread
                 await Task.Run(() =>
                 {
-                    _ = orchestrator.DetectAndHandleChanges(
-                        action: null,
-                        logger: new VsLogger());
+                    _ = orchestrator.DetectAndHandleChanges(action: null);
                 });
 
                 Services.OutputWindowLogger.Log("=== Auto-Refresh Complete ===");

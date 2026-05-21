@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 
@@ -125,13 +126,18 @@ SELECT
             };
         }
 
-        public List<TableChangeSummary> GetChangesSummary(string targetDatabase, string shadowDatabase, List<string> tables)
+        public List<TableChangeSummary> GetChangesSummary(
+            string targetDatabase,
+            string shadowDatabase,
+            List<string> tables,
+            CancellationToken ct = default)
         {
             var results = new List<TableChangeSummary>();
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
             foreach (var table in tables)
             {
+                ct.ThrowIfCancellationRequested();
                 var tableStart = sw.ElapsedMilliseconds;
                 results.Add(GetTableDiffCounts(targetDatabase, shadowDatabase, table));
                 var tableTime = sw.ElapsedMilliseconds - tableStart;

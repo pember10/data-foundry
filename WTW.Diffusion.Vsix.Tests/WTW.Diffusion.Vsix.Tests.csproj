@@ -7,6 +7,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <Configurations>Debug;Release;Debug (VS2026);Release (VS2026)</Configurations>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,11 +30,11 @@
     This avoids pulling in the entire VSIX project and its VS SDK dependencies.
   -->
   <ItemGroup>
-    <Compile Include="..\Services\ServicesHelper.cs"               Link="Services\ServicesHelper.cs" />
+    <Compile Include="..\Services\ServicesHelper.cs" Link="Services\ServicesHelper.cs" />
     <Compile Include="..\Services\GlobalProcessingStateService.cs" Link="Services\GlobalProcessingStateService.cs" />
     <Compile Include="..\Services\ChangeDetectionResultsService.cs" Link="Services\ChangeDetectionResultsService.cs" />
-    <Compile Include="..\Services\DatabaseSyncStatusService.cs"    Link="Services\DatabaseSyncStatusService.cs" />
-    <Compile Include="..\Services\SettingsChangedService.cs"       Link="Services\SettingsChangedService.cs" />
+    <Compile Include="..\Services\DatabaseSyncStatusService.cs" Link="Services\DatabaseSyncStatusService.cs" />
+    <Compile Include="..\Services\SettingsChangedService.cs" Link="Services\SettingsChangedService.cs" />
   </ItemGroup>
 
 </Project>

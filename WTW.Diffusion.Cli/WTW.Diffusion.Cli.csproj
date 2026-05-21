@@ -14,6 +14,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Configurations>Debug;Release;Debug (VS2026);Release (VS2026)</Configurations>
   </PropertyGroup>
 
   <ItemGroup>

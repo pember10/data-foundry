@@ -5,9 +5,9 @@ using System.Windows.Controls;
 using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 using data_foundry.Services;
-using data_foundry.Services.Adapters;
 using Microsoft.VisualStudio.Shell;
 
+#pragma warning disable VSTHRD100 // Avoid async void methods — all async void here are WPF event handlers with try/catch
 namespace data_foundry.Views.Controls
 {
     public partial class DeploymentTabControl : UserControl
@@ -158,8 +158,7 @@ namespace data_foundry.Views.Controls
                     orchestrator.Execute(
                         confirmTargetMigration: false,
                         detectChanges: false,
-                        action: null,
-                        logger: new VsLogger());
+                        action: null);
                 });
 
                 AppendLog("=== Deployment Complete ===");

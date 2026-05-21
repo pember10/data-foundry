@@ -31,13 +31,13 @@ namespace data_foundry.Services
             _psRunner = new PowerShellScriptRunner(scriptPath);
         }
 
-        public void ExecuteTargetMigrations(bool requireConfirmation, ILogger logger)
+        public void ExecuteTargetMigrations(bool requireConfirmation)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            ThreadHelper.JoinableTaskFactory.Run(() => ExecuteTargetMigrationsAsync(requireConfirmation, logger));
+            ThreadHelper.JoinableTaskFactory.Run(() => ExecuteTargetMigrationsAsync(requireConfirmation));
         }
 
-        public async Task ExecuteTargetMigrationsAsync(bool requireConfirmation, ILogger logger)
+        public async Task ExecuteTargetMigrationsAsync(bool requireConfirmation)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -50,7 +50,7 @@ namespace data_foundry.Services
                 { CoreConstants.Parameters.DetectChanges, false }
             };
 
-            var result = await _psRunner.ExecuteAsync(parameters, logger == null ? (System.Action<string>)null : logger.Log).ConfigureAwait(true);
+            var result = await _psRunner.ExecuteAsync(parameters, null).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -60,13 +60,13 @@ namespace data_foundry.Services
             }
         }
 
-        public List<TableChangeSummary> DetectAndHandleChanges(string action, ILogger logger)
+        public List<TableChangeSummary> DetectAndHandleChanges(string action)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            return ThreadHelper.JoinableTaskFactory.Run(() => DetectAndHandleChangesAsync(action, logger));
+            return ThreadHelper.JoinableTaskFactory.Run(() => DetectAndHandleChangesAsync(action));
         }
 
-        public async Task<List<TableChangeSummary>> DetectAndHandleChangesAsync(string action, ILogger logger)
+        public async Task<List<TableChangeSummary>> DetectAndHandleChangesAsync(string action)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -84,7 +84,7 @@ namespace data_foundry.Services
                 parameters[CoreConstants.Parameters.Action] = action;
             }
 
-            var result = await _psRunner.ExecuteAsync(parameters, logger == null ? (System.Action<string>)null : logger.Log).ConfigureAwait(true);
+            var result = await _psRunner.ExecuteAsync(parameters, null).ConfigureAwait(true);
 
             if (!result.Success)
             {
@@ -158,13 +158,13 @@ namespace data_foundry.Services
             return PowerShellOutputParser.ParseGeneratedScriptPath(result.Output);
         }
 
-        public void RevertChanges(List<string> tableNames, ILogger logger)
+        public void RevertChanges(List<string> tableNames)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            ThreadHelper.JoinableTaskFactory.Run(() => RevertChangesAsync(tableNames, logger));
+            ThreadHelper.JoinableTaskFactory.Run(() => RevertChangesAsync(tableNames));
         }
 
-        public async Task RevertChangesAsync(List<string> tableNames, ILogger logger)
+        public async Task RevertChangesAsync(List<string> tableNames)
         {
             var (database, server) = ServicesHelper.ParseConnectionString(_options.LocalDatabaseConnection);
 
@@ -178,7 +178,7 @@ namespace data_foundry.Services
                 { CoreConstants.Parameters.ConfigPath, GetTableListConfigPath() }
             };
 
-            var result = await _psRunner.ExecuteAsync(parameters, logger == null ? (System.Action<string>)null : logger.Log).ConfigureAwait(true);
+            var result = await _psRunner.ExecuteAsync(parameters, null).ConfigureAwait(true);
 
             if (!result.Success)
             {

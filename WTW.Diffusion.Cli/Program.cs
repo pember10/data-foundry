@@ -4,6 +4,7 @@ using WTW.Diffusion.Cli.Adapters;
 using WTW.Diffusion.Cli.Commands;
 using WTW.Diffusion.Cli.Infrastructure;
 using WTW.Diffusion.Core.Abstractions;
+using WTW.Diffusion.Core.Helpers;
 using WTW.Diffusion.Core.Models;
 using WTW.Diffusion.Core.Services.Database;
 
@@ -67,6 +68,20 @@ var azdoOpt = new Option<bool>(
     ["--azdo"],
     "Emit Azure DevOps logging commands (##vso[...]) and publish a pipeline summary tab.");
 
+var sqlProjectOpt = new Option<string?>(
+    ["--sql-project", "--SqlProject"],
+    "Name of the .sqlproj to update after generating a migration script (e.g. Api.Db).");
+
+var solutionRootOpt = new Option<string?>(
+    ["--solution-root", "--SolutionRoot"],
+    "Directory to search for the .sqlproj file. Defaults to the parent of --migrations-path.");
+
+var minSqlVersionOpt = new Option<int?>(
+    ["--min-sql-version", "--MinSqlVersion"],
+    description: "Minimum SQL Server major version to enforce (e.g. 13 for 2016, 15 for 2019). " +
+                 "Defaults to reading from the .sqlproj DSP when --sql-project is set. " +
+                 "Set to 0 to skip the check entirely.");
+
 // 🔧 Root command ─────────────────────────────────────────────────────────────
 
 var root = new RootCommand(
@@ -84,6 +99,9 @@ var root = new RootCommand(
     shadowDatabaseOpt,
     migrationLogSchemaOpt,
     azdoOpt,
+    sqlProjectOpt,
+    solutionRootOpt,
+    minSqlVersionOpt,
     InitCommand.Build()
 };
 
@@ -101,8 +119,12 @@ root.SetHandler(async (context) =>
     var shadowDatabase         = context.ParseResult.GetValueForOption(shadowDatabaseOpt);
     var migrationLogSchema     = context.ParseResult.GetValueForOption(migrationLogSchemaOpt);
     var azdo                   = context.ParseResult.GetValueForOption(azdoOpt);
+    var sqlProject             = context.ParseResult.GetValueForOption(sqlProjectOpt);
+    var solutionRoot           = context.ParseResult.GetValueForOption(solutionRootOpt);
+    var minSqlVersion          = context.ParseResult.GetValueForOption(minSqlVersionOpt);
 
     ILogger logger = azdo ? new AzdoLogger() : new ConsoleLogger();
+    var ct = context.GetCancellationToken();
 
     // Tracked for pipeline output
     int pendingMigrationsApplied = 0;
@@ -127,7 +149,8 @@ root.SetHandler(async (context) =>
 
         var ctx = ServiceContext.Build(
             targetServer, targetDatabase, migrationsPath,
-            shadowDatabase, migrationLogSchema, accessToken);
+            shadowDatabase, migrationLogSchema, accessToken,
+            solutionRoot ?? (sqlProject is not null ? Path.GetDirectoryName(migrationsPath) : null));
 
         // ?? Target migration execution ?????????????????????????????????????
         if (accessToken is null)
@@ -135,6 +158,17 @@ root.SetHandler(async (context) =>
             logger.Log("Ensuring target database...");
             ctx.Repository.CreateDatabaseIfMissing(ctx.TargetDatabase);
         }
+
+        // 🔍 SQL Server version check ─────────────────────────────────────────
+        string? projectFilePath = (ctx.ProjectManager is not null && sqlProject is not null)
+            ? ctx.ProjectManager.GetProjectPath(sqlProject)
+            : null;
+        SqlProjectDspReader.ValidateAndWarn(
+            ctx.TargetDatabase,
+            ctx.Repository,
+            logger,
+            minSqlVersion,
+            projectFilePath);
 
         logger.Log("Ensuring migration log table...");
         ctx.Repository.EnsureMigrationLogTable(
@@ -190,7 +224,7 @@ root.SetHandler(async (context) =>
 
         // Always do a full recreate — matches PS behaviour
         logger.Log("Recreating shadow database...");
-        ctx.ShadowManager.Recreate();
+        ctx.ShadowManager.Recreate(ct);
         logger.Log("Shadow migrations complete.");
 
         logger.Log("Detecting changes between target and shadow...");
@@ -264,6 +298,26 @@ root.SetHandler(async (context) =>
                     logger.Log("Logging newly generated migration script to migration log...");
                     ctx.ScriptManager.ExecuteMigrationScript(ctx.TargetDatabase, migrationInfo, skipExecution: true);
                 }
+
+                if (sqlProject is not null)
+                {
+                    if (ctx.ProjectManager is null)
+                    {
+                        // ProjectManager is null only if solutionRoot wasn't derivable — shouldn't happen
+                        // since Build() uses Path.GetDirectoryName(migrationsPath) as fallback when sqlProject is set.
+                        logger.LogError($"SQL project '{sqlProject}' could not be resolved. Use --solution-root to specify the search directory.");
+                        Environment.Exit(3);
+                    }
+                    string projectPath = ctx.ProjectManager.GetProjectPath(sqlProject)!;
+                    if (projectPath is null)
+                    {
+                        logger.LogError($"SQL project '{sqlProject}' not found. Use --solution-root to specify the search directory.");
+                        Environment.Exit(3);
+                    }
+                    string folderPath = ctx.ProjectManager.GetRelativeFolderPath(projectPath, filePath) ?? string.Empty;
+                    ctx.ProjectManager.AddFileToProject(sqlProject, filePath, folderPath);
+                    logger.Log($"Added script to project '{sqlProject}'.");
+                }
                 break;
 
             case "Cancel":
@@ -298,6 +352,12 @@ root.SetHandler(async (context) =>
 });
 
 return await root.InvokeAsync(args);
+
+// Exit codes:
+//   0 = success
+//   1 = cancelled by user (OperationCanceledException)
+//   2 = unhandled error
+//   3 = .sqlproj not found (--sql-project specified but project could not be located)
 
 // ?? Local config model (mirrors PS config.json) ????????????????????????????
 internal sealed class TrackedTablesConfig

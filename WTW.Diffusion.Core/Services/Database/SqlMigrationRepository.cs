@@ -190,6 +190,14 @@ ORDER BY c.column_id;";
             return ExecuteQuery(database, query);
         }
 
+        public int GetServerMajorVersion(string database)
+        {
+            var result = ExecuteQuery(database, "SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS INT) AS MajorVersion");
+            if (result.Rows.Count == 0 || result.Rows[0]["MajorVersion"] == DBNull.Value)
+                return 0;
+            return Convert.ToInt32(result.Rows[0]["MajorVersion"]);
+        }
+
         public DataTable GetTableData(string database, string table)
         {
             var safeDatabaseName = QuoteSqlIdentifier(database);

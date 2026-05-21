@@ -108,6 +108,12 @@ namespace data_foundry.Options
         [Description("SQL Server version that scripts need to be compatible with. This will be derived from the target if baselining is performed.")]
         public string SqlCompatibilityVersion { get; set; }
 
+        [DefaultValue("")]
+        [Category("Build Options")]
+        [DisplayName("Minimum SQL Server Version")]
+        [Description("Minimum SQL Server major version to enforce (e.g. 13 for 2016, 15 for 2019). Leave blank to read from the .sqlproj DSP automatically. Set to 0 to skip the check entirely.")]
+        public string SqlMinServerVersion { get; set; }
+
         [DefaultValue(false)]
         [Category("Build Options")]
         [DisplayName("Fail Build On Errors")]

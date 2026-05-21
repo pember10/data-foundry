@@ -9,8 +9,9 @@
     <Company>WTW</Company>
     <Product>WTW Diffusion</Product>
     <Description>Core business logic for WTW Diffusion SQL migration and change detection</Description>
-    <Copyright>Copyright © WTW 2025</Copyright>
+    <Copyright>Copyright ï¿½ WTW 2025</Copyright>
     <LangVersion>latest</LangVersion>
+    <Configurations>Debug;Release;Debug (VS2026);Release (VS2026)</Configurations>
   </PropertyGroup>
 
   <ItemGroup>

@@ -29,41 +29,25 @@ namespace data_foundry
             try
             {
                 var assemblyName = new AssemblyName(args.Name);
-                
-                // Handle Azure.Core version redirects
-                if (assemblyName.Name == "Azure.Core")
-                {
-                    return LoadFromExtensionDirectory("Azure.Core.dll");
-                }
 
-                // Handle System.Memory version redirects
-                if (assemblyName.Name == "System.Memory")
+                switch (assemblyName.Name)
                 {
-                    return LoadFromExtensionDirectory("System.Memory.dll");
-                }
-
-                // Handle System.Text.Json version redirects
-                if (assemblyName.Name == "System.Text.Json")
-                {
-                    return LoadFromExtensionDirectory("System.Text.Json.dll");
-                }
-
-                // Handle Azure.Identity version redirects
-                if (assemblyName.Name == "Azure.Identity")
-                {
-                    return LoadFromExtensionDirectory("Azure.Identity.dll");
-                }
-
-                // Handle Azure.Identity version redirects
-                if (assemblyName.Name == "Azure.Identity")
-                {
-                    return LoadFromExtensionDirectory("Azure.Identity.dll");
-                }
-
-                // Handle Microsoft.Identity.Client version redirects
-                if (assemblyName.Name == "Microsoft.Identity.Client")
-                {
-                    return LoadFromExtensionDirectory("Microsoft.Identity.Client.dll");
+                    case "Azure.Core":
+                        return LoadFromExtensionDirectory("Azure.Core.dll");
+                    case "Azure.Identity":
+                        return LoadFromExtensionDirectory("Azure.Identity.dll");
+                    case "Microsoft.Identity.Client":
+                        return LoadFromExtensionDirectory("Microsoft.Identity.Client.dll");
+                    case "System.Memory":
+                        return LoadFromExtensionDirectory("System.Memory.dll");
+                    case "System.Text.Json":
+                        return LoadFromExtensionDirectory("System.Text.Json.dll");
+                    case "System.Threading.Tasks.Extensions":
+                        return LoadFromExtensionDirectory("System.Threading.Tasks.Extensions.dll");
+                    case "System.Runtime.CompilerServices.Unsafe":
+                        return LoadFromExtensionDirectory("System.Runtime.CompilerServices.Unsafe.dll");
+                    case "System.Buffers":
+                        return LoadFromExtensionDirectory("System.Buffers.dll");
                 }
             }
             catch (Exception ex)
@@ -76,12 +60,23 @@ namespace data_foundry
 
         private static Assembly LoadFromExtensionDirectory(string assemblyFileName)
         {
+            // 1. Extension install directory — normal case
             var extensionDir = Path.GetDirectoryName(typeof(AssemblyResolver).Assembly.Location);
             var assemblyPath = Path.Combine(extensionDir, assemblyFileName);
-
             if (File.Exists(assemblyPath))
-            {
                 return Assembly.LoadFrom(assemblyPath);
+
+            // 2. VS IDE directories — for assemblies VSSDK excludes from VSIX but VS ships itself
+            //    AppDomain.CurrentDomain.BaseDirectory is VS's Common7\IDE\ when running inside VS.
+            var ideDir = AppDomain.CurrentDomain.BaseDirectory;
+            foreach (var subDir in new[] { string.Empty, "PublicAssemblies", "PrivateAssemblies" })
+            {
+                assemblyPath = string.IsNullOrEmpty(subDir)
+                    ? Path.Combine(ideDir, assemblyFileName)
+                    : Path.Combine(ideDir, subDir, assemblyFileName);
+
+                if (File.Exists(assemblyPath))
+                    return Assembly.LoadFrom(assemblyPath);
             }
 
             return null;

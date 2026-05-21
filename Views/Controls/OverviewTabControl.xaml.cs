@@ -6,11 +6,11 @@ using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using data_foundry.Options;
 using data_foundry.Services;
-using data_foundry.Services.Adapters;
 using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
 using System.Threading.Tasks;
 
+#pragma warning disable VSTHRD100 // Avoid async void methods â€” all async void here are WPF event handlers with try/catch
 namespace data_foundry.Views.Controls
 {
     public partial class OverviewTabControl : UserControl
@@ -308,7 +308,7 @@ namespace data_foundry.Views.Controls
                 {
                     orchestrator.ExecuteTargetMigrations(
                         requireConfirmation: false,
-                        logger: new VsLogger());
+                        ct: GlobalProcessingStateService.Instance.CancellationToken);
                 });
 
                 OutputWindowLogger.Log("=== Migration Execution Complete ===");
@@ -322,6 +322,12 @@ namespace data_foundry.Views.Controls
                     "Migrations Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+            }
+            catch (OperationCanceledException)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.Log("=== Migration execution cancelled ===");
+                ShowErrorState("Migration execution cancelled");
             }
             catch (Exception ex)
             {
@@ -358,7 +364,7 @@ namespace data_foundry.Views.Controls
                 {
                     changes = orchestrator.DetectAndHandleChanges(
                         action: null, // Don't auto-act on changes
-                        logger: new VsLogger());
+                        ct: GlobalProcessingStateService.Instance.CancellationToken);
                 });
 
                 OutputWindowLogger.Log("=== Change Detection Complete ===");
@@ -375,7 +381,7 @@ namespace data_foundry.Views.Controls
                         var message = "Changes detected:\n\n";
                         foreach (var change in changesWithDiffs)
                         {
-                            message += $"• {change.Table}: {change.Inserts} inserts, {change.Updates} updates, {change.Deletes} deletes\n";
+                            message += $"ï¿½ {change.Table}: {change.Inserts} inserts, {change.Updates} updates, {change.Deletes} deletes\n";
                         }
                         message += "\nCheck the Output window for full details.";
 
@@ -619,7 +625,7 @@ namespace data_foundry.Views.Controls
                 {
                     orchestrator.ExecuteTargetMigrations(
                         requireConfirmation: false,
-                        logger: new VsLogger());
+                        ct: GlobalProcessingStateService.Instance.CancellationToken);
                 });
 
                 OutputWindowLogger.Log("=== Migrations Applied Successfully ===");
@@ -635,6 +641,11 @@ namespace data_foundry.Views.Controls
                     "Migrations Applied",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+            }
+            catch (OperationCanceledException)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutputWindowLogger.Log("=== Migration application cancelled ===");
             }
             catch (Exception ex)
             {

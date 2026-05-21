@@ -10,10 +10,10 @@ namespace WTW.Diffusion.Core.Services.Migration
     /// </summary>
     public interface IMigrationExecutor
     {
-        void ExecuteTargetMigrations(bool requireConfirmation, ILogger logger = null);
-        List<TableChangeSummary> DetectAndHandleChanges(string action, ILogger logger = null);
+        void ExecuteTargetMigrations(bool requireConfirmation);
+        List<TableChangeSummary> DetectAndHandleChanges(string action);
         List<MigrationInfo> GetPendingMigrationsForTarget();
         string GenerateMigrationScriptWithName(List<string> tableNames, string scriptName);
-        void RevertChanges(List<string> tableNames, ILogger logger = null);
+        void RevertChanges(List<string> tableNames);
     }
 }

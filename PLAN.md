@@ -1,14 +1,14 @@
-# WTW Diffusion � Project Plan
+# WTW Diffusion — Project Plan
 
 ## Overview
 
 WTW Diffusion is a developer productivity tool for teams working with SQL Server databases alongside
-source-controlled migration scripts. It automates the detection, scripting, and deployment of data
+source-controlled migration scripts. It automates the detection, scripting, and deployment of **data**
 changes so that seed/reference data stays in sync with the rest of the codebase.
 
 The tool is delivered in two forms:
 
-- A **Visual Studio 2022 extension (VSIX)** for interactive, developer-facing workflows
+- A **Visual Studio 2022/2026 extension (VSIX)** for interactive, developer-facing workflows
 - A **cross-platform CLI** (`wtw-diffusion`) for unattended use in CI/CD pipelines
 
 ---
@@ -16,7 +16,7 @@ The tool is delivered in two forms:
 ## Problem Statement
 
 SQL Server Data Projects (`.sqlproj`) handle schema migrations well, but they have no built-in
-concept of **data migrations** � changes to seed or reference tables that must be scripted,
+concept of **data migrations** -- changes to seed or reference tables that must be scripted,
 reviewed, and deployed alongside schema changes.
 
 Without tooling, developers must:
@@ -30,91 +30,370 @@ WTW Diffusion automates all of this.
 
 ---
 
-## Core Concept � The Shadow Database
+## Core Concept -- The Shadow Database
 
-The shadow database is the heart of the system. It is a throw-away database that is rebuilt from
-scratch by replaying every migration script in the repository in order. It represents what the
-database **should** look like � the source of truth.
+The shadow database is a throw-away SQL Server database rebuilt from scratch by replaying every
+migration script in the repository in order. It represents what the database **should** look like.
 
-Change detection works by comparing each tracked table in the **target** (developer's local
-database) against the corresponding table in the **shadow**. Any row that differs represents a
-data change that needs to be captured as a migration script.
+Change detection compares each tracked table in the **target** (developer's local database) against
+the corresponding table in the **shadow**. Any row that differs must be captured as a new migration.
 
-```
-Migrations folder
-       ?
-       ?
-Shadow DB  ??? rebuilt from all scripts (source of truth)
-       ?
-       ?  compare tracked tables
-       ?
-Target DB  ??? developer's working database
-       ?
-       ?
-  Differences
-  ??? New rows   ? INSERT statements
-  ??? Changed rows ? UPDATE statements
-  ??? Deleted rows ? DELETE statements
-```
+    Migrations folder
+           |
+           v
+    Shadow DB  <-- rebuilt from all scripts (source of truth)
+           |
+           |  compare tracked tables
+           |
+    Target DB  <-- developer's working database
+           |
+           v
+      Differences
+      > New rows     -> INSERT statements
+      > Changed rows -> UPDATE statements
+      > Deleted rows -> DELETE statements
 
 ---
 
 ## Solution Structure
 
-```
-data-foundry.sln
-??? data-foundry/               # VSIX � .NET Framework 4.7.2
-??? WTW.Diffusion.Core/         # Business logic � .NET Standard 2.0
-??? WTW.Diffusion.Cli/          # CLI tool � .NET 8
-??? WTW.Diffusion.Tests/        # Core + CLI unit tests � .NET 8
-??? WTW.Diffusion.Vsix.Tests/   # VSIX service tests � .NET Framework 4.7.2
-```
+    data-foundry.sln
+    +-- data-foundry/             # VSIX -- .NET Framework 4.7.2
+    +-- WTW.Diffusion.Core/       # Business logic -- .NET Standard 2.0
+    +-- WTW.Diffusion.Cli/        # CLI tool -- .NET 8
+    +-- WTW.Diffusion.Tests/      # Core + CLI unit tests -- .NET 8
+    +-- WTW.Diffusion.Vsix.Tests/ # VSIX service tests -- .NET Framework 4.7.2
 
-### Why three separate projects?
+### Why this structure?
 
-| Project | Reason for separation |
-|---|---|
-| `WTW.Diffusion.Core` | No VS dependency � reusable in CLI and testable with `dotnet test` |
-| `data-foundry` (VSIX) | Requires VS SDK, DTE, WPF � cannot be used outside Visual Studio |
-| `WTW.Diffusion.Cli` | Requires .NET 8 for cross-platform publish and modern SDK features |
+| Project | Framework | Reason |
+|---|---|---|
+| `WTW.Diffusion.Core` | .NET Standard 2.0 | No VS dependency -- reusable in CLI and testable with `dotnet test` |
+| `data-foundry` (VSIX) | .NET Framework 4.7.2 | VS SDK, DTE, WPF -- cannot run outside Visual Studio |
+| `WTW.Diffusion.Cli` | .NET 8 | Cross-platform publish, self-contained binary |
+| `WTW.Diffusion.Tests` | .NET 8 | xUnit tests for Core and CLI -- runs with `dotnet test` |
+| `WTW.Diffusion.Vsix.Tests` | .NET Framework 4.7.2 | xUnit tests for VS-independent VSIX services |
 
 ---
 
 ## Architecture
 
-```
-?????????????????????????????   ?????????????????????????????????
-?    data-foundry (VSIX)    ?   ?      WTW.Diffusion.Cli        ?
-?    .NET Framework 4.7.2   ?   ?      .NET 8                   ?
-?                           ?   ?                               ?
-?  VsLogger                 ?   ?  ConsoleLogger                ?
-?  VsConfigurationProvider  ?   ?  FileConfigurationProvider    ?
-?  VsProjectManager         ?   ?  FileSystemProjectManager     ?
-?  WPF UI / DTE / VS SDK    ?   ?  AzdoLogger (--azdo mode)     ?
-?????????????????????????????   ?????????????????????????????????
-             ?                                  ?
-             ????????????????????????????????????
-                              ?
-             ??????????????????????????????????????
-             ?       WTW.Diffusion.Core            ?
-             ?       .NET Standard 2.0             ?
-             ?                                    ?
-             ?  SqlMigrationRepository             ?
-             ?  ChangeDetectionService             ?
-             ?  MigrationScriptGenerator           ?
-             ?  MigrationScriptManager             ?
-             ?  ShadowDatabaseManager              ?
-             ?  AzureSqlAuthenticationProvider     ?
-             ??????????????????????????????????????
-```
+    ┌────────────────────────────────┐    ┌──────────────────────────────────┐
+    │     data-foundry (VSIX)        │    │       WTW.Diffusion.Cli          │
+    │     .NET Framework 4.7.2       │    │       .NET 8                     │
+    │                                │    │                                  │
+    │  VsLogger                      │    │  ConsoleLogger                   │
+    │  VsConfigurationProvider       │    │  FileSystemProjectManager        │
+    │  VsProjectManager              │    │  AzdoLogger (--azdo mode)        │
+    │  WPF UI / DTE / VS SDK         │    │  ServiceContext (wiring)         │
+    │  SqlMigrationOrchestrator      │    │  PipelineOutput (ADO vars)       │
+    │  PowerShellScriptRunner        │    │  InitCommand (init subcommand)   │
+    │  AssemblyResolver              │    │                                  │
+    └───────────────┬────────────────┘    └───────────────┬──────────────────┘
+                    │                                     │
+                    └────────────────┬────────────────────┘
+                                     │
+             ┌───────────────────────────────────────────────┐
+             │          WTW.Diffusion.Core                   │
+             │          .NET Standard 2.0                    │
+             │                                               │
+             │  Abstractions/                                │
+             │    ILogger, IConfigurationProvider,           │
+             │    IProjectManager                            │
+             │                                               │
+             │  Services/Database/                           │
+             │    SqlMigrationRepository (+ interface)       │
+             │    ChangeDetectionService                     │
+             │    AzureSqlAuthenticationProvider             │
+             │                                               │
+             │  Services/Migration/                          │
+             │    MigrationScriptManager (+ interface)       │
+             │    MigrationScriptGenerator                   │
+             │    IMigrationExecutor                         │
+             │    PowerShellOutputParser, PowerShellResult   │
+             │                                               │
+             │  Services/                                    │
+             │    ShadowDatabaseManager                      │
+             │                                               │
+             │  Orchestration/                               │
+             │    IOrchestratorStep, OrchestratorContext     │
+             │                                               │
+             │  Models, Config, Helpers, Constants           │
+             └───────────────────────────────────────────────┘
 
 ### Abstractions (defined in Core, implemented per host)
 
 | Interface | VSIX implementation | CLI implementation |
 |---|---|---|
-| `ILogger` | `VsLogger` (Output Window) | `ConsoleLogger` / `AzdoLogger` |
-| `IConfigurationProvider` | `VsConfigurationProvider` | _(reads CLI args)_ |
-| `IProjectManager` | `VsProjectManager` | `FileSystemProjectManager` |
+| `ILogger` | `VsLogger` -> `OutputWindowLogger` | `ConsoleLogger` / `AzdoLogger` |
+| `IConfigurationProvider` | `VsConfigurationProvider` -> `DataFoundryOptions` | (reads CLI args directly) |
+| `IProjectManager` | `VsProjectManager` -> `ProjectFileManager` (DTE) | `FileSystemProjectManager` (XML) |
+
+---
+
+## NuGet Package Versions
+
+### `WTW.Diffusion.Core` (netstandard2.0)
+
+| Package | Version |
+|---|---|
+| `Microsoft.Data.SqlClient` | 5.1.5 |
+| `Newtonsoft.Json` | 13.0.3 |
+| `Microsoft.Identity.Client` | 4.83.3 |
+| `Azure.Identity` | 1.21.0 |
+| `Azure.Core` | 1.53.0 |
+
+### `data-foundry` VSIX (net472)
+
+| Package | Version | Notes |
+|---|---|---|
+| `Microsoft.VisualStudio.SDK` | 17.0.32112.339 | VS SDK meta-package |
+| `Microsoft.VSSDK.BuildTools` | 17.14.2120 | VSIX build targets |
+| `Newtonsoft.Json` | 13.0.3 | |
+| `System.Management.Automation` | **5.1.1 -- pinned** | v6+ targets netcoreapp; v7+ targets net8; neither works with net472 |
+| `System.Threading.Tasks.Extensions` | **4.6.3** | Delivers assembly 4.2.4.0 -- must match Core's transitive dep; see assembly binding section |
+| `System.Buffers` | 4.5.1 | |
+| `System.Runtime.CompilerServices.Unsafe` | 6.0.0 | |
+| `Microsoft.Identity.Client` | 4.83.3 | |
+
+### `WTW.Diffusion.Cli` (net8)
+
+| Package | Version |
+|---|---|
+| `System.CommandLine` | 2.0.0-beta4.22272.1 |
+| `Newtonsoft.Json` | 13.0.3 |
+
+### `WTW.Diffusion.Tests` (net8)
+
+| Package | Version |
+|---|---|
+| `xunit` | 2.9.3 |
+| `xunit.runner.visualstudio` | 2.8.2 |
+| `Microsoft.NET.Test.Sdk` | 17.12.0 |
+| `FluentAssertions` | 6.12.2 |
+| `Moq` | 4.20.72 |
+
+### `WTW.Diffusion.Vsix.Tests` (net472)
+
+| Package | Version |
+|---|---|
+| `xunit` | 2.9.3 |
+| `xunit.runner.visualstudio` | 2.8.2 |
+| `Microsoft.NET.Test.Sdk` | 17.12.0 |
+| `FluentAssertions` | 6.12.2 |
+
+---
+
+## Key Files -- WTW.Diffusion.Core
+
+    WTW.Diffusion.Core/
+    +-- Constants.cs
+    |       All string/regex constants (FileExtensions, Folders, Tables,
+    |       Azure, RegularExpressions, Parameters, Actions)
+    +-- Abstractions/
+    |   +-- ILogger.cs              Log / LogError / LogWarning / LogDebug
+    |   +-- IConfigurationProvider  LocalDatabaseConnection, ShadowDatabaseConnection,
+    |   |                           SqlProject, MigrationsFolder, UsePowerShellScript,
+    |   |                           PowerShellScriptPath, TrackedTables
+    |   +-- IProjectManager.cs      AddFileToProject / GetProjectPath / GetRelativeFolderPath
+    +-- Config/
+    |   +-- TableListConfig.cs      { List<string> Tables } -- JSON key: "tables"
+    |   +-- DataFoundryConfig.cs    static LoadTableList() -- reads tablelist.json from
+    |                               PathHelper.GetExtensionInstallDirectory()/Config/
+    +-- Helpers/
+    |   +-- PathHelper.cs           SanitizePathComponent, IsValidPath, SafeCombine,
+    |                               GetSafeDirectoryName, GetExtensionInstallDirectory,
+    |                               EnsureDirectoryExists
+    +-- Models/
+    |   +-- ActivityEntry.cs        INotifyPropertyChanged; ActivityType / ActivityStatus enums
+    |   +-- DatabaseChange.cs       Basic change metadata
+    |   +-- MigrationAction.cs      enum: Revert | Migrate | Cancel
+    |   +-- MigrationInfo.cs        { Guid Id, string Content, FileName, FullPath }
+    |   +-- ShadowDatabaseCacheInfo { Hash, MigrationCount, LastUpdated, DatabaseName }
+    |   |                           Serialised to shadow-cache.json
+    |   +-- TableChangeSummary.cs   { Table, int Inserts, Updates, Deletes }
+    |                               HasChanges => any > 0
+    +-- Orchestration/
+    |   +-- IOrchestratorStep.cs    IOrchestratorStep.ExecuteAsync(OrchestratorContext)
+    |                               OrchestratorContext carries shared state bag
+    +-- Services/
+        +-- ShadowDatabaseManager.cs
+        |       EnsureUpToDate(ct) -- two-level cache (memory + disk)
+        |       Recreate(ct) -- drop, create, apply all migrations in order
+        |       GetMigrationsHash() -- SHA256 of filename+LastWriteUtc ticks
+        |       static InvalidateCache()
+        +-- Database/
+        |   +-- ISqlMigrationRepository.cs      Testability interface for all DB operations
+        |   +-- SqlMigrationRepository.cs       Microsoft.Data.SqlClient implementation
+        |   |       ExecuteScriptAndLog()        Atomic: script + __MigrationLog insert in one tx
+        |   |       ExecuteSqlScript()           Splits on GO, runs batches
+        |   |       DatabaseExists / CreateDatabaseIfMissing
+        |   |       DropAndRecreateDatabase      SET SINGLE_USER + DROP + CREATE
+        |   |       GetPrimaryKeyColumns / GetNonPrimaryColumns
+        |   |       GetColumnMetadata / GetTableData
+        |   +-- ChangeDetectionService.cs
+        |   |       GetTableDiffCounts()         Single query for Inserts/Updates/Deletes counts
+        |   |       GetChangesSummary(tables,ct) Per-table loop; ct checked each iteration
+        |   |       RevertChanges()              DELETE rows not in shadow, INSERT missing rows
+        |   |       ValidateIdentifier()         OWASP SQL injection guard (called on all identifiers)
+        |   |       QuoteIdentifier()            [bracket] escaping with ] doubling
+        |   +-- AzureSqlAuthenticationProvider  DefaultAzureCredential -> access token
+        |                                       for *.database.windows.net targets
+        +-- Migration/
+            +-- IMigrationExecutor.cs           Strategy: C# path or PowerShell path
+            +-- IMigrationScriptManager.cs      GetMigrationInfoFromFile / GetPendingMigrations
+            |                                   GetRelativeFilename / ExecuteMigrationScript
+            +-- MigrationScriptManager.cs
+            |       GetPendingMigrations()      Reads *.sql, parses GUID header,
+            |                                   cross-references __MigrationLog
+            |       ExecuteMigrationScript(skipExecution)
+            |                                   skipExecution=true -> logs GUID only (post-generate)
+            |       GetFileChecksum()           SHA256 of file bytes
+            +-- MigrationScriptGenerator.cs
+            |       GenerateMigrationScript()   Builds INSERT/UPDATE/DELETE for each changed table
+            |                                   Picks deepest subfolder of outputDir
+            |                                   FormatSqlLiteral() handles NULL, DateTime, bool,
+            |                                   byte[], Guid types
+            +-- PowerShellOutputParser.cs       ParseChanges / ParsePendingMigrations /
+            |                                   ParseGeneratedScriptPath -- parses PS stdout
+            +-- PowerShellResult.cs             { bool Success, List<string> Output, Errors }
+
+---
+
+## Key Files -- data-foundry (VSIX)
+
+    data-foundry/
+    +-- data_foundryPackage.cs
+    |       AsyncPackage; [ProvideAutoLoad] on NoSolution + SolutionExists
+    |       InitializeAsync: calls AssemblyResolver.Initialize() FIRST,
+    |       stores static Instance, registers ShowDataFoundryToolWindowCommand
+    +-- AssemblyResolver.cs
+    |       AppDomain.CurrentDomain.AssemblyResolve hook
+    |       Must be registered BEFORE any other code in InitializeAsync
+    |       Handles: Azure.Core, Azure.Identity, Microsoft.Identity.Client,
+    |         System.Memory, System.Text.Json, System.Threading.Tasks.Extensions,
+    |         System.Runtime.CompilerServices.Unsafe, System.Buffers
+    |       Fallback order: extension dir -> VS IDE dir ->
+    |         PublicAssemblies -> PrivateAssemblies
+    +-- ShowDataFoundryToolWindowCommand.cs   Menu command to open the tool window
+    +-- DataFoundryToolWindow.cs              ToolWindowPane hosting TabbedContentControl
+    +-- DataFoundryToolWindowControl.xaml(.cs) Root WPF control
+    +-- app.config                            Assembly binding redirects (see assembly binding section)
+    +-- Options/
+    |   +-- DataFoundryOptions.cs
+    |   |       DialogPage; Tools -> Options -> WTW Diffusion -> General
+    |   |       Properties: LocalDatabaseConnection, ShadowDatabaseConnection,
+    |   |         SqlProject, MigrationsFolder, UsePowerShellScript,
+    |   |         AutoRefresh, ShowNotifications, VerboseLogging,
+    |   |         TrackedTables (get/set reads/writes tablelist.json)
+    |   |       OnApply: fires SettingsChangedService + DatabaseSyncStatusService
+    |   +-- ConnectionStringEditor.cs    UITypeEditor for SQL connection string picker
+    |   +-- SqlProjectListConverter.cs   TypeConverter populating SQL project dropdown
+    |   +-- MigrationsFolderListConverter TypeConverter populating migrations folder dropdown
+    +-- Services/
+    |   +-- SqlMigrationOrchestrator.cs
+    |   |       Main coordinator; two constructors:
+    |   |         (DataFoundryOptions, DTE) -- from VSIX package
+    |   |         (string db, server, migrationsPath, ...) -- programmatic
+    |   |       Dual mode: UsePowerShellScript -> PowerShellMigrationExecutor,
+    |   |         else C# services
+    |   |       Methods: ExecuteTargetMigrations(ct), DetectAndHandleChanges(ct),
+    |   |         Execute(ct), GenerateMigrationScriptWithName, RevertChanges(ct)
+    |   +-- SqlMigrationOrchestratorFactory.cs
+    |   |       Create(package), CreateFromGlobalPackage()
+    |   |       CreateAdapters() -> (ILogger, IConfigProvider, IProjectManager)
+    |   +-- CSharpMigrationExecutor.cs         IMigrationExecutor -> SqlMigrationOrchestrator
+    |   +-- PowerShellMigrationExecutor.cs     IMigrationExecutor -> PowerShellScriptRunner
+    |   |                                      All methods sync-over-async via JoinableTaskFactory.Run
+    |   +-- PowerShellScriptRunner.cs          Runs SqlMetadataAutomation.ps1 via Runspace API
+    |   |                                      Uses System.Management.Automation 5.1.1
+    |   +-- PowerShellOrchestratorWrapper.cs   Thin shim around PowerShellMigrationExecutor
+    |   +-- OutputWindowLogger.cs
+    |   |       Static; creates "WTW Diffusion" output pane (GUID-keyed)
+    |   |       Log / LogError / LogWarning / Clear / Show
+    |   +-- ProjectFileManager.cs              DTE-based; AddFileToProject / GetProjectPath
+    |   +-- ProjectIntegrationService.cs       Wraps ProjectFileManager; called post-script-gen
+    |   +-- ActivityHistoryService.cs          Singleton; StartActivity / UpdateActivity
+    |   +-- ChangeDetectionResultsService.cs   Singleton event bus; UpdateResults / ClearResults
+    |   +-- DatabaseSyncStatusService.cs       Singleton; NotifySyncStatusChanged event
+    |   +-- SettingsChangedService.cs          Singleton; NotifySettingsChanged event
+    |   +-- GlobalProcessingStateService.cs
+    |   |       Singleton; TryStartProcessing / CompleteProcessing / CancelOperation
+    |   |       Exposes CancellationToken -- passed by Views into all orchestrator calls
+    |   +-- TrackedTablesManager.cs            GetTrackedTables / SaveTrackedTables / Add / Remove
+    |   +-- ServicesHelper.cs                  ParseConnectionString -> (Database, Server)
+    |   |                                      Uses System.Data.SqlClient.SqlConnectionStringBuilder
+    |   +-- ConsoleLogger.cs                   Fallback ILogger (VS-internal use only)
+    |   +-- Adapters/
+    |       +-- VsLogger.cs                    ILogger -> OutputWindowLogger; UI-thread marshal
+    |       |                                  Respects VerboseLogging flag for LogDebug
+    |       +-- VsConfigurationProvider.cs     IConfigurationProvider -> DataFoundryOptions
+    |       |                                  TrackedTables reads tablelist.json via DataFoundryConfig
+    |       +-- VsProjectManager.cs            IProjectManager -> ProjectFileManager (DTE)
+    +-- Converters/
+    |   +-- NullToVisibilityConverter.cs       WPF value converter
+    +-- Views/Controls/
+        +-- TabbedContentControl.xaml(.cs)     Root tab strip: Overview / Changes / Deployment / Settings
+        +-- OverviewTabControl.xaml(.cs)
+        |       Sync status, pending migrations, deploy button
+        |       Passes GlobalProcessingStateService.CancellationToken to all orchestrator calls
+        |       Catches OperationCanceledException separately; logs clean cancellation message
+        +-- ChangesTabControl.xaml(.cs)
+        |       Refresh / Generate Script / Revert buttons + diff grid
+        |       Passes GlobalProcessingStateService.CancellationToken to all orchestrator calls
+        |       Catches OperationCanceledException separately; logs clean cancellation message
+        +-- DeploymentTabControl.xaml(.cs)     Deploy migrations to target
+        +-- SettingsTabControl.xaml(.cs)       Settings summary / link to Options
+        +-- NoSqlProjectMessageControl.xaml    Shown when no .sqlproj found in solution
+
+---
+
+## Key Files -- WTW.Diffusion.Cli
+
+    WTW.Diffusion.Cli/
+    +-- Program.cs
+    |       Top-level statements; root command with all options mirroring
+    |       SqlMetadataAutomation.ps1 parameters (--kebab-case + --PascalCase aliases)
+    |       Flow: acquire Azure token -> ensure DB -> apply pending migrations ->
+    |         (optional) recreate shadow -> detect changes -> Migrate|Revert|Cancel
+    |       Exit codes: 0=ok, 1=cancelled, 2=unhandled error
+    +-- Adapters/
+    |   +-- ConsoleLogger.cs        ILogger -> stdout; colour-coded (White/Red/Yellow/DarkGray)
+    |   +-- AzdoLogger.cs           ILogger; wraps ConsoleLogger; emits ##[error], ##[warning],
+    |   |                           ##vso[task.setvariable], ##vso[task.uploadsummary]
+    |   |                           Helpers: SetVariable / SetOutputVariable / UploadSummary / AddBuildTag
+    |   +-- FileSystemProjectManager.cs
+    |                               IProjectManager; adds <Build Include="..."/> to .sqlproj via XDocument
+    |                               GetProjectPath: searches solutionRoot for *.sqlproj by name
+    +-- Commands/
+    |   +-- InitCommand.cs          `wtw-diffusion init [--output dir]`
+    |                               Scaffolds config.json with { "TrackedTables": ["dbo.MyTable"] }
+    +-- Infrastructure/
+        +-- ServiceContext.cs       ServiceContext.Build(server, db, migrationsPath, ...)
+        |                           Wires all Core services; shadow-cache.json beside executable
+        +-- PipelineOutput.cs       Publish(pendingCount, changes, scriptPath, tempDir)
+                                    Sets ADO pipeline variables and uploads Markdown summary tab
+
+---
+
+## Key Files -- Tests
+
+    WTW.Diffusion.Tests/
+    +-- Core/
+    |   +-- SqlIdentifierTests.cs             ValidateIdentifier: injection, length, brackets, schemas
+    |   +-- PathHelperTests.cs                SafeCombine, IsValidPath, GetSafeDirectoryName
+    |   +-- MigrationScriptGeneratorTests.cs  INSERT/UPDATE/DELETE generation; SQL literal escaping
+    |   |                                     Uses Mock<ISqlMigrationRepository>; IDisposable temp dir
+    |   +-- PowerShellOutputParserTests.cs    ParseChanges, ParsePendingMigrations, ParseGeneratedScriptPath
+    +-- Cli/
+        +-- PipelineOutputTests.cs            BuildMarkdown: no-change, pending, change table, script section
+
+    WTW.Diffusion.Vsix.Tests/  (VSIX service files compiled as linked files -- no VS SDK needed)
+    +-- Services/
+        +-- GlobalProcessingStateServiceTests.cs
+        +-- ChangeDetectionResultsServiceTests.cs
+        +-- EventServiceTests.cs
+        +-- ServicesHelperTests.cs
 
 ---
 
@@ -122,111 +401,230 @@ data-foundry.sln
 
 ### 1. Apply pending migrations
 
-Scans the migrations folder for `.sql` files whose GUID (`-- <Migration ID="{guid}" />`) is not yet
-recorded in `dbo.__MigrationLog` on the target database. Executes each in filename order.
-The script execution and the log write happen in a **single transaction** � either both succeed or
-neither does.
+`MigrationScriptManager.GetPendingMigrations(database)`:
+1. `GetExecutedMigrationIds()` -- reads GUIDs from `dbo.__MigrationLog`
+2. Scans `*.sql` recursively in migrations folder, ordered by path
+3. Parses each file for `-- <Migration ID="{guid}" />`
+4. Returns files whose GUID is not in the executed set
+
+`MigrationScriptManager.ExecuteMigrationScript(database, info, skipExecution)`:
+- `skipExecution=false` (normal): calls `repository.ExecuteScriptAndLog()` -- atomic transaction
+- `skipExecution=true` (post-generate): calls `repository.LogMigrationExecution()` only
 
 ### 2. Detect data changes
 
-1. Ensures the shadow database is up to date (rebuilds if the migration hash has changed)
-2. Compares each tracked table using `HASHBYTES('SHA2_256', ...)` row hashing
-3. Returns a `TableChangeSummary` per table with insert / update / delete counts
+1. `ShadowDatabaseManager.EnsureUpToDate(ct)` -- checks in-memory hash, then disk cache, recreates if stale
+2. `ChangeDetectionService.GetChangesSummary(target, shadow, tables, ct)` -- one SQL query per table
+3. Returns `List<TableChangeSummary>` with per-table insert/update/delete counts
 
 ### 3. Generate a migration script
 
-Generates `INSERT`, `UPDATE`, and `DELETE` statements for each changed row. Embeds a new GUID as a
-migration ID comment so the script can later be logged without re-execution. Adds the script to the
-`.sqlproj` via the `IProjectManager` abstraction.
+`MigrationScriptGenerator.GenerateMigrationScript(target, shadow, tables, outputDir, scriptName)`:
+1. Picks latest subfolder of `outputDir`
+2. Writes header: `-- <Migration ID="{newGuid}" />`
+3. Per table: generates DELETEs (rows in shadow not in target), then INSERTs, then UPDATEs
+4. `MigrationScriptManager.ExecuteMigrationScript(..., skipExecution: true)` logs the GUID so the script will not re-run
+5. `ProjectIntegrationService.AddScriptToProject()` adds it to `.sqlproj`
 
 ### 4. Revert changes
 
-Replays the shadow database state back onto the target by generating and immediately executing a
-revert script. The target is left in the state the shadow defines.
-
----
-
-## Data Flow
-
-```
-Developer edits reference data in their local DB
-           ?
-           ?
-  [ Refresh Changes ]
-           ?
-           ??? Rebuild shadow DB if migrations changed (SHA-256 hash cache)
-           ?         ??? Drop & recreate ? apply all scripts in order
-           ?
-           ??? Compare tracked tables (configured in tablelist.json)
-           ?         ??? HASHBYTES SHA-256 per row ? diff counts per table
-           ?
-           ??? Show results in Changes tab
-                     ?
-          ???????????????????????
-          ?          ?          ?
-       Migrate     Revert     Cancel
-          ?          ?
-          ?          ?
-   Generate SQL  Replay shadow
-   script file   ? target DB
-          ?
-          ?
-   Add to .sqlproj
-   Commit to source control
-```
+`ChangeDetectionService.RevertChanges(target, shadow, tables)`:
+- Tables with PK: DELETE rows not in shadow, INSERT rows from shadow missing in target
+- Tables without PK: TRUNCATE + INSERT SELECT * FROM shadow
 
 ---
 
 ## Database Conventions
 
-### Migration log table � `dbo.__MigrationLog`
+### Migration log table -- `dbo.__MigrationLog`
 
-Every migration script contains a GUID comment header:
+Every migration script must contain this comment on line 1:
 
 ```sql
 -- <Migration ID="{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}" />
+GO
 ```
 
-When a script is applied, a row is written to `__MigrationLog` in the same transaction:
+`MigrationLogTableDefinition.sql` is in `Config/` and is deployed into the VSIX package and beside
+the CLI executable. Actual column names:
 
 | Column | Type | Description |
 |---|---|---|
-| `Id` | `uniqueidentifier` | The migration GUID from the script header |
-| `FileName` | `nvarchar(500)` | Basename of the script file |
-| `AppliedAt` | `datetime2` | UTC timestamp of application |
-| `Checksum` | `nvarchar(64)` | SHA-256 of the script content |
+| `migration_id` | `uniqueidentifier` | GUID from the script header |
+| `script_filename` | `nvarchar(500)` | Relative path from migrations root |
+| `complete_dt` | `datetime2` | `SYSDATETIME()` at execution time |
+| `script_checksum` | `nvarchar(64)` | SHA-256 hex of file bytes |
+| `applied_by` | `nvarchar` | `SYSTEM_USER` at execution time |
+| `deployed` | `bit` | Always `1` |
+| `version`, `package_version`, `release_version` | `nvarchar` | Nullable; reserved |
 
-Scripts whose ID already exists in `__MigrationLog` are **never re-executed**.
+**Atomicity rule**: `SqlMigrationRepository.ExecuteScriptAndLog()` wraps both the script execution
+and the `INSERT INTO __MigrationLog` in a single transaction. **Never** call `ExecuteSqlScript` +
+`LogMigrationExecution` as two separate calls.
+
+Scripts whose GUID already exists in `__MigrationLog` are never re-executed.
 
 ### Change detection hashing
 
-Row comparison uses `HASHBYTES('SHA2_256', ...)` over all non-PK columns with
-`ISNULL(CONVERT(NVARCHAR(MAX), col), '#NULL#')` to handle nulls deterministically.
-`CHECKSUM()` is explicitly avoided � it has well-known collision cases.
+Per-row comparison uses a single SQL statement that computes three counts in one round trip:
+
+```sql
+SELECT
+  (rows in target WHERE NOT EXISTS in shadow)  AS Inserts,
+  (rows in both WHERE HASHBYTES('SHA2_256', concat_non_pk_cols) differs) AS Updates,
+  (rows in shadow WHERE NOT EXISTS in target) AS Deletes
+```
+
+Null handling: `ISNULL(CONVERT(NVARCHAR(MAX), col), '#NULL#')` before hashing.
+`CHECKSUM()` is explicitly **not** used -- it has known collision cases.
 
 ### Shadow database caching
 
-Rebuilding the shadow is expensive. A two-level cache avoids unnecessary rebuilds:
+Two-level cache to avoid unnecessary rebuilds:
 
-1. **In-memory** � a `static` hash string on `ShadowDatabaseManager`
-2. **On-disk** � `shadow-cache.json` beside the extension config
+1. **In-memory** -- `static string _lastShadowMigrationHash` on `ShadowDatabaseManager`
+2. **On-disk** -- `shadow-cache.json` beside `tablelist.json`; contains hash, migrationCount, lastUpdated, databaseName
 
-The cache key is a SHA-256 over all migration filenames concatenated with their
-`LastWriteTimeUtc` ticks. Any file addition, deletion, or modification invalidates it.
+Cache key: SHA256 of all `.sql` filenames + `LastWriteTimeUtc.Ticks`, sorted by path, joined with `|`.
+
+`ShadowDatabaseManager.InvalidateCache()` clears the in-memory hash, forcing re-evaluation on next call.
+
+### SQL injection prevention
+
+`ChangeDetectionService.ValidateIdentifier()` is called on every database name and table name:
+- Database names: rejects `'`, `"`, `;`, `--`, `/*`, `*/`, `xp_`, `sp_`
+- Table/column names: must match `^[a-zA-Z_][a-zA-Z0-9_]*$` (after stripping brackets)
+- Max length: 128 characters
+
+`QuoteIdentifier()` wraps identifiers in `[brackets]` and doubles any internal `]` characters.
+
+### Script generation output location
+
+`MigrationScriptGenerator.GenerateMigrationScript()` picks the **lexicographically last subfolder**
+of `outputDir` (e.g., `Migrations/2025/`). If no subfolders exist, writes directly to `outputDir`.
+
+---
+
+## VSIX Assembly Binding -- Critical Details
+
+The VSIX runs on .NET Framework 4.7.2 inside Visual Studio. VSSDK build tools exclude several
+assemblies from the VSIX package as "platform assemblies" even when Core requires them.
+
+### app.config binding redirects
+
+```xml
+<dependentAssembly>
+  <assemblyIdentity name="Microsoft.Identity.Client" publicKeyToken="0a613f4dd989e8ae" />
+  <bindingRedirect oldVersion="0.0.0.0-4.83.3.0" newVersion="4.83.3.0" />
+</dependentAssembly>
+<dependentAssembly>
+  <assemblyIdentity name="Azure.Core" publicKeyToken="92742159e12e44c8" />
+  <bindingRedirect oldVersion="0.0.0.0-1.53.0.0" newVersion="1.53.0.0" />
+</dependentAssembly>
+<dependentAssembly>
+  <assemblyIdentity name="System.Memory" publicKeyToken="cc7b13ffcd2ddd51" />
+  <bindingRedirect oldVersion="0.0.0.0-4.0.5.0" newVersion="4.0.5.0" />
+</dependentAssembly>
+<dependentAssembly>
+  <assemblyIdentity name="System.Text.Json" publicKeyToken="cc7b13ffcd2ddd51" />
+  <bindingRedirect oldVersion="0.0.0.0-8.0.0.6" newVersion="8.0.0.6" />
+</dependentAssembly>
+<dependentAssembly>
+  <assemblyIdentity name="System.Runtime.CompilerServices.Unsafe" publicKeyToken="b03f5f7f11d50a3a" />
+  <bindingRedirect oldVersion="0.0.0.0-6.0.0.0" newVersion="6.0.0.0" />
+</dependentAssembly>
+<dependentAssembly>
+  <assemblyIdentity name="System.Threading.Tasks.Extensions" publicKeyToken="cc7b13ffcd2ddd51" />
+  <bindingRedirect oldVersion="0.0.0.0-4.2.4.0" newVersion="4.2.4.0" />
+</dependentAssembly>
+```
+
+### AssemblyResolver
+
+`AssemblyResolver.Initialize()` must be called **first** in `data_foundryPackage.InitializeAsync()`,
+before any other code runs. It hooks `AppDomain.CurrentDomain.AssemblyResolve` and searches for the
+assembly in this fallback order:
+
+1. Extension install directory (normal installed VSIX case)
+2. `AppDomain.CurrentDomain.BaseDirectory` (VS `Common7\IDE\`)
+3. `Common7\IDE\PublicAssemblies\`
+4. `Common7\IDE\PrivateAssemblies\`
+
+### Forcing System.Threading.Tasks.Extensions into the VSIX package
+
+VSSDK treats this as a platform assembly and excludes it. The csproj forces inclusion:
+
+```xml
+<Content Include="$(NuGetPackageRoot)system.threading.tasks.extensions\4.6.3\lib\net462\System.Threading.Tasks.Extensions.dll"
+         Condition="Exists('...')">
+  <Link>System.Threading.Tasks.Extensions.dll</Link>
+  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+  <IncludeInVSIX>true</IncludeInVSIX>
+</Content>
+```
+
+The NuGet reference must be `Version="4.6.3"` -- this package delivers assembly version 4.2.4.0,
+which is what Core's transitive dependencies compile against.
+
+---
+
+## Coding Conventions
+
+### Namespace conflicts in VSIX
+- **Never** use `using static WTW.Diffusion.Core.Constants` in VSIX files -- conflicts with `EnvDTE.Constants`
+- Use alias: `using CoreConstants = WTW.Diffusion.Core.Constants;`
+- Reference as: `CoreConstants.Folders.Config`, `CoreConstants.Azure.AzureSqlDomain`, etc.
+
+### SqlClient choice
+- Core: `using Microsoft.Data.SqlClient` (active development, Azure AD support)
+- VSIX: `using System.Data.SqlClient` (BCL; legacy compat with net472)
+
+### .NET Standard 2.0 constraints (Core)
+- `DataTable.AsEnumerable()` is **not available** -- use `Rows.Cast<DataRow>()` instead
+- `DataTableExtensions` (`System.Data.DataSetExtensions`) is not available
+
+### COM interop (VSIX)
+- `ProjectItems` is a COM interface -- `null` is the correct "not found" sentinel
+- Suppress SonarQube S1168 with `[SuppressMessage]` on method + `// NOSONAR` on line
+
+### CancellationToken threading
+- `GlobalProcessingStateService.CancellationToken` is passed from Views into all orchestrator calls
+- `SqlMigrationOrchestrator` public methods accept `CancellationToken ct = default`
+- Core services call `ct.ThrowIfCancellationRequested()` at the start of each loop iteration
+- `OperationCanceledException` is caught separately from `Exception` in View code-behinds
+
+### Cognitive complexity
+All methods must have cognitive complexity <= 12. Break complex logic into private helpers.
 
 ---
 
 ## CI/CD Integration (`wtw-diffusion` CLI)
 
-The CLI is a drop-in replacement for `SqlMetadataAutomation.ps1`. All parameter names are aliased
-to match the PowerShell script exactly, so existing pipeline definitions need no changes.
+The CLI is a drop-in replacement for `SqlMetadataAutomation.ps1`. All parameters have dual aliases:
+`--kebab-case` (new standard) and `--PascalCase` (legacy PS compatibility).
 
-### Azure DevOps � `--azdo` flag
+### Root command options
 
-When `--azdo` is passed:
+| Option | Required | Description |
+|---|---|---|
+| `--target-database` | Yes | Database name |
+| `--target-server` | Yes | SQL Server hostname or instance |
+| `--migrations-path` | Yes | Path to migration scripts folder |
+| `--detect-changes` | | Flag; triggers shadow rebuild + diff |
+| `--action` | | `Revert` \| `Migrate` \| `Cancel`; prompts if omitted |
+| `--confirm-target-migration` | | Prompt before applying pending migrations |
+| `--config-path` | | Path to `config.json`; defaults to `./config.json` |
+| `--output-migration-dir` | | Where to write generated scripts; defaults to `--migrations-path` |
+| `--script-name` | | Script filename (no extension); prompts if omitted |
+| `--shadow-database` | | Defaults to `{TargetDatabase}_Shadow` |
+| `--migration-log-schema` | | Path to `MigrationLogTableDefinition.sql`; defaults to beside executable |
+| `--azdo` | | ADO mode: emit `##[error]`, `##vso[...]` commands and upload summary tab |
 
-- Errors emit `##[error]` logging commands (shown red in the ADO log viewer)
-- These pipeline variables are set for downstream steps:
+### Subcommands
+
+- `wtw-diffusion init [--output dir]` -- creates a starter `config.json`
+
+### Azure DevOps pipeline variables set by `--azdo`
 
 | Variable | Example |
 |---|---|
@@ -236,35 +634,45 @@ When `--azdo` is passed:
 | `wtw.totalChanges` | `14` |
 | `wtw.generatedScript` | `C:\agent\...\001_Seed.sql` |
 
-- A Markdown summary tab is uploaded to the pipeline run page
-
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | Cancelled by user (`--confirm-target-migration` rejected) |
+| `1` | Cancelled by user (`OperationCanceledException`) |
 | `2` | Unhandled error |
 
 ---
 
 ## Configuration
 
-### `tablelist.json` � tracked tables
+### `tablelist.json` -- tracked tables (VSIX)
 
-Located in the extension install directory (VSIX) or passed via `--config-path` (CLI).
+Located at `{extension install dir}/Config/tablelist.json`. JSON key is `"tables"` (lowercase).
+Editable via **Tools -> Options -> WTW Diffusion -> General -> Tracked Tables** (comma-separated UI).
 
 ```json
-{
-  "TrackedTables": [
-    "dbo.LookupCodes",
-    "dbo.Roles",
-    "dbo.Permissions"
-  ]
-}
+{ "tables": ["LookupCodes", "Roles", "Permissions"] }
 ```
 
-Editable in the VSIX via **Tools ? Options ? WTW Diffusion ? Tracked Tables**.
+### CLI `config.json`
+
+JSON key is `"TrackedTables"` (note: different casing from VSIX). Generated by `wtw-diffusion init`.
+
+```json
+{ "TrackedTables": ["dbo.LookupCodes", "dbo.Roles"] }
+```
+
+---
+
+## Build Notes
+
+- **VSIX must be built through Visual Studio** -- `dotnet build` / MSBuild direct invocation fails (WPF/WinFx targets require VS toolchain)
+- **Core and CLI** can be built independently with `dotnet build`
+- **Tests**: `dotnet test WTW.Diffusion.Tests` -- 54 tests, no VS required
+- **Vsix.Tests**: compiles VSIX service files as linked files to avoid VS SDK dependency; run via VS Test Explorer
+- After deleting VSIX source files, delete `obj\` before rebuilding to clear CS2001 ghost errors
+- `InternalsVisibleTo("WTW.Diffusion.Tests")` is set in both Core and CLI csproj files
 
 ---
 
@@ -272,11 +680,10 @@ Editable in the VSIX via **Tools ? Options ? WTW Diffusion ? Tracked Tables**.
 
 | Project | Framework | What it tests |
 |---|---|---|
-| `WTW.Diffusion.Tests` | xUnit / net8 | Core parsing, SQL identifier safety, path utilities, script generation (mocked repo), CLI pipeline output |
-| `WTW.Diffusion.Vsix.Tests` | xUnit / net472 | VSIX-specific services with no VS dependency: connection string parsing, processing state, event services |
+| `WTW.Diffusion.Tests` | xUnit / net8 | SQL identifier validation, PathHelper, script generation SQL output (mocked `ISqlMigrationRepository`), PowerShell output parsing, CLI pipeline markdown |
+| `WTW.Diffusion.Vsix.Tests` | xUnit / net472 | `GlobalProcessingStateService`, `ChangeDetectionResultsService`, event services, `ServicesHelper.ParseConnectionString` |
 
-VS-coupled code (DTE, Output Window, WPF) is not unit tested � those are covered by manual
-end-to-end testing in the experimental VS instance.
+VS-coupled code (DTE, Output Window, WPF) is covered by manual end-to-end testing in the experimental VS instance.
 
 ---
 
@@ -285,41 +692,108 @@ end-to-end testing in the experimental VS instance.
 | Decision | Choice | Reason |
 |---|---|---|
 | Core target framework | .NET Standard 2.0 | Consumed by both net472 VSIX and net8 CLI |
-| VSIX target framework | .NET Framework 4.7.2 | Required by VS 2022 extension model |
+| VSIX target framework | .NET Framework 4.7.2 | Required by VS 2022/2026 extension model |
 | CLI target framework | .NET 8 | Cross-platform publish, self-contained binary |
-| SQL client (Core) | `Microsoft.Data.SqlClient` | Active development, Azure AD auth support |
+| SQL client (Core) | `Microsoft.Data.SqlClient` 5.1.5 | Active development, Azure AD auth support |
 | SQL client (VSIX) | `System.Data.SqlClient` | Legacy compat with net472 VS toolchain |
-| JSON serialisation | `Newtonsoft.Json` | Consistent across all three projects |
-| CLI argument parsing | `System.CommandLine` (beta4) | Double-dash conventions, built-in `--help` |
+| JSON serialisation | `Newtonsoft.Json` 13.0.3 | Consistent across all projects |
+| CLI argument parsing | `System.CommandLine` 2.0.0-beta4 | Double-dash conventions, built-in `--help` |
 | Change detection | `HASHBYTES('SHA2_256', ...)` | Collision-resistant; `CHECKSUM()` is not |
 | Test framework | xUnit + FluentAssertions + Moq | Standard modern .NET test stack |
 | Azure auth | `Azure.Identity` `DefaultAzureCredential` | Works for local dev, MI, service principal |
+| Orchestration future | `IOrchestratorStep` / `OrchestratorContext` | Foundation for future visual pipeline designer |
 
 ---
 
 ## Known Constraints
 
-- **VSIX must be built through Visual Studio** � `dotnet build` cannot resolve VS SDK targets
-- **`System.Management.Automation` is pinned at 5.1.1** � v6+ targets netcoreapp, v7+ targets
-  net8; neither is compatible with net472. Upgrading requires migrating the VSIX to
-  `net8.0-windows` (SDK-style, VS 2022 17.9+)
-- **`EnvDTE.Constants` namespace conflict** � never use `using static WTW.Diffusion.Core.Constants`
-  in VSIX files; use the alias `using CoreConstants = WTW.Diffusion.Core.Constants` instead
-- **`DataTable.AsEnumerable()`** is not available in .NET Standard 2.0 � use
-  `Rows.Cast<DataRow>()` instead
-- **COM interop (`ProjectItems`)** has no empty constructor � `null` is the correct "not found"
-  sentinel; suppress SonarQube S1168 with `[SuppressMessage]`
+- **VSIX must be built through Visual Studio** -- `dotnet build` cannot resolve VS SDK targets
+- **`System.Management.Automation` is pinned at 5.1.1** -- v6+ targets netcoreapp, v7+ targets net8; neither is compatible with net472. Upgrading requires migrating the VSIX to `net8.0-windows` (SDK-style, VS 2022 17.9+)
+- **`System.Threading.Tasks.Extensions` must be explicitly included in the VSIX** -- VSSDK build tools exclude it as a "platform assembly"; see the forced `<Content IncludeInVSIX="true">` item in `data-foundry.csproj`
+- **`EnvDTE.Constants` namespace conflict** -- never use `using static WTW.Diffusion.Core.Constants` in VSIX files; use alias `using CoreConstants = WTW.Diffusion.Core.Constants`
+- **`DataTable.AsEnumerable()`** is not available in .NET Standard 2.0 -- use `Rows.Cast<DataRow>()` instead
+- **COM interop (`ProjectItems`)** has no empty constructor -- `null` is the correct "not found" sentinel
 
 ---
 
-## Future Work
+## Remaining Work
 
-| Item | Priority | Notes |
-|---|---|---|
-| Rename VSIX to `WTW.Diffusion.Extension` | Low | Requires solution restructure |
-| Migrate VSIX to `net8.0-windows` SDK-style | Low | Unblocks PowerShell 7, async improvements |
-| Wire `IConfigurationProvider` / `IProjectManager` into `SqlMigrationOrchestrator` | Medium | Currently accesses config/project directly |
-| `CancellationToken` support in Core services | Medium | Cancel button exists in UI but doesn't interrupt mid-operation |
-| Publish `wtw-diffusion` to an internal NuGet feed | Medium | Enables `dotnet tool install` in pipelines |
-| GitHub Actions workflow template | Low | Parallel to the ADO example in the CLI README |
-| `detect-changes` / `generate-script` / `deploy` as CLI subcommands | Low | Currently all in one root command |
+### Medium Priority
+
+#### Minimum SQL Server version check from `.sqlproj` DSP
+
+SSDT `.sqlproj` files declare their target SQL Server version via the `<DSP>` (Database Schema Provider) property in the first `<PropertyGroup>`, e.g.:
+
+```
+Microsoft.Data.Tools.Schema.Sql.Sql150DatabaseSchemaProvider      ->  SQL Server 2019 (major version 15)
+Microsoft.Data.Tools.Schema.Sql.Sql130DatabaseSchemaProvider      ->  SQL Server 2016 (major version 13)
+Microsoft.Data.Tools.Schema.Sql.SqlAzureV12DatabaseSchemaProvider ->  Azure SQL (skip check)
+```
+
+Numeric suffix maps to SQL Server major version: `Sql90`->9, `Sql100`->10, `Sql110`->11, `Sql120`->12, `Sql130`->13, `Sql140`->14, `Sql150`->15, `Sql160`->16.
+
+**Override semantics for `int? MinSqlServerVersion`:**
+- `null` = auto-detect from `.sqlproj` DSP (default for both surfaces)
+- `0` = skip check entirely
+- positive int = enforce that version as the minimum, ignoring DSP (e.g. `13` for SQL Server 2016)
+
+**Note:** The CLI bypasses `IConfigurationProvider` entirely (uses `ServiceContext` directly), so the validation logic accepts the override as a direct parameter rather than reading from configuration internally.
+
+**Implementation steps:**
+
+1. **`WTW.Diffusion.Core/Helpers/SqlProjectDspReader.cs`** (new static class)
+   - `ReadDsp(string? projectFilePath): string?` -- `XDocument.Load(projectFilePath)`, find first `<DSP>` in any `<PropertyGroup>`, return its value or `null`
+   - `ParseMinimumMajorVersion(string? dsp): int?` -- regex `Sql(\d+)DatabaseSchemaProvider`, divide by 10 if >= 100 (e.g. `150`->15, `100`->10), use as-is if < 100 (e.g. `90`->9). Return `null` for Azure (`SqlAzureV12`) or unrecognised providers.
+   - `ValidateAndWarn(string targetDb, ISqlMigrationRepository repo, ILogger logger, int? minVersionOverride, string? projectFilePath)` -- shared entry point for both VSIX and CLI:
+     - `minVersionOverride == 0` -> return (skip)
+     - `minVersionOverride == null` -> `ReadDsp(projectFilePath)` + `ParseMinimumMajorVersion`; if still null -> return silently
+     - effective min = `minVersionOverride ?? dspMin`
+     - query `GetServerMajorVersion` -> `_logger.Log` if ok, `_logger.LogWarning` if below (advisory, no throw)
+
+2. **`ISqlMigrationRepository` + `SqlMigrationRepository`** -- add `int GetServerMajorVersion(string database)`
+   - Query: `SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS INT)`
+   - Returns the server major version integer (e.g. 15 for SQL Server 2019).
+
+3. **`IConfigurationProvider`** -- add `int? MinSqlServerVersion { get; }` (`null` = auto from DSP)
+
+4. **`DataFoundryOptions`** (VSIX) -- add `string SqlMinServerVersion` under "Build Options":
+   - `DefaultValue("")` -- empty = auto-detect from DSP
+   - Description: `"Minimum SQL Server major version to enforce (e.g. 13 for 2016, 15 for 2019). Leave blank to read from the .sqlproj DSP. Set to 0 to skip the check."`
+
+5. **`VsConfigurationProvider`** -- implement `MinSqlServerVersion`:
+   - empty/null -> `null` (auto); `"0"` -> `0` (skip); valid integer string -> that value
+
+6. **`SqlMigrationOrchestrator`** -- add private `ValidateServerVersion()`, called at top of `ExecuteTargetMigrations()`:
+   - `minVersionOverride = _configuration.MinSqlServerVersion`
+   - `projectFilePath = _projectManager.GetProjectPath(_configuration.SqlProject)`
+   - Delegates to `SqlProjectDspReader.ValidateAndWarn(...)`
+
+7. **`Program.cs`** (CLI) -- add `--min-sql-version` (`Option<int?>`, no default -> `null`):
+   - Description: `"Minimum SQL Server major version (e.g. 13 for 2016, 15 for 2019). Defaults to reading from --sql-project DSP. Set to 0 to skip."`
+   - Call `SqlProjectDspReader.ValidateAndWarn(ctx.TargetDatabase, ctx.Repository, logger, minSqlVersion, ctx.ProjectManager?.GetProjectPath(sqlProject))` before migrations execute
+
+8. **Tests** (`WTW.Diffusion.Tests`):
+   - `SqlProjectDspReaderTests` -- `ReadDsp` (temp XML file), `ParseMinimumMajorVersion` (all DSP strings, Azure, unknown), `ValidateAndWarn` (override = null/0/positive, DSP present/absent/Azure)
+   - Extend orchestrator tests to verify `GetServerMajorVersion` is called and the correct log/warning is emitted
+
+**Note:** `IProjectManager` is not changed -- `ReadDsp` takes a file path directly, obtained via the existing `GetProjectPath()` call.
+
+### Low Priority
+
+| Item | Detail |
+|---|---|
+| **`detect-changes` / `generate-script` / `deploy` as CLI subcommands** | Currently all logic is in the root command handler in `Program.cs`. Splitting into subcommands would improve discoverability. |
+| **GitHub Actions workflow template** | A reusable workflow YAML for `.github/workflows/`, parallel to the ADO pipeline example. |
+| **Publish `wtw-diffusion` to an internal NuGet feed** | Enables `dotnet tool install wtw-diffusion` in pipelines without a file copy step. |
+| **Migrate VSIX to `net8.0-windows` SDK-style** | Unblocks PowerShell 7, async improvements, and modern SDK features. Requires VS 2022 17.9+. Should be bundled with any effort to upgrade `System.Management.Automation`. |
+| **Rename VSIX project to `WTW.Diffusion.Extension`** | Low impact; requires solution restructure and updating all project/namespace references. |
+| **UI/UX polish** | Spacing, alignment, grid column auto-sizing across all tab controls. |
+
+### Completed
+
+| Item | Status |
+|---|---|
+| **Wire `IConfigurationProvider` / `IProjectManager` into `SqlMigrationOrchestrator`** | ✅ Done — `SqlMigrationOrchestrator` primary constructor accepts `(ILogger, IConfigurationProvider, IProjectManager, ...)`. `SqlMigrationOrchestratorFactory` creates and passes the three VS adapters. No `DataFoundryOptions` dependency in Core. |
+| **`RevertChanges` efficiency** | ✅ Done — `SqlMigrationOrchestrator.RevertChanges(List<string> tableNames, CancellationToken ct)` calls `ChangeDetectionService.RevertChanges()` directly, skipping shadow sync. `ChangesTabControl` passes the already-known `changesWithDiffs` table names. |
+| **`CancellationToken` in CLI** | ✅ Done — `context.GetCancellationToken()` is extracted at handler start and passed to `ctx.ShadowManager.Recreate(ct)`. Ctrl+C is handled automatically by `System.CommandLine`. |
+| **`FileSystemProjectManager` in CLI Migrate path** | ✅ Done — `ServiceContext.Build()` wires `FileSystemProjectManager` when `solutionRoot` is provided; CLI Migrate path calls `ctx.ProjectManager.AddFileToProject(...)` after generating a script. |

@@ -23,5 +23,11 @@ namespace WTW.Diffusion.Core.Services.Database
         List<string> GetNonPrimaryColumns(string database, string table, List<string> primaryKeys);
         DataTable GetColumnMetadata(string database, string table);
         DataTable GetTableData(string database, string table);
+
+        /// <summary>
+        /// Returns the major version of the SQL Server instance hosting <paramref name="database"/>.
+        /// Equivalent to <c>SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS INT)</c>.
+        /// </summary>
+        int GetServerMajorVersion(string database);
     }
 }

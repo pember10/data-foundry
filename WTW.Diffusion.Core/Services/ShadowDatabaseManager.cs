@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using Newtonsoft.Json;
 using WTW.Diffusion.Core.Abstractions;
 using WTW.Diffusion.Core.Models;
@@ -39,7 +40,7 @@ namespace WTW.Diffusion.Core.Services
         /// Uses a two-level cache (in-memory + disk) to avoid unnecessary recreation.
         /// </summary>
         /// <returns>True if the shadow database was recreated; false if the cached version was used.</returns>
-        public bool EnsureUpToDate()
+        public bool EnsureUpToDate(CancellationToken ct = default)
         {
             string currentHash = GetMigrationsHash();
             bool needsRecreate = false;
@@ -69,14 +70,14 @@ namespace WTW.Diffusion.Core.Services
                     {
                         needsRecreate = true;
                         if (cachedInfo != null)
-                            logger?.Log("Shadow database cache invalid — migrations have changed");
+                            logger?.Log("Shadow database cache invalid ï¿½ migrations have changed");
                     }
                 }
             }
 
             if (needsRecreate)
             {
-                Recreate();
+                Recreate(ct);
 
                 lock (_shadowDbLock)
                 {
@@ -96,10 +97,12 @@ namespace WTW.Diffusion.Core.Services
         /// <summary>
         /// Forces the shadow database to be dropped and fully rebuilt from all migration scripts.
         /// </summary>
-        public void Recreate()
+        public void Recreate(CancellationToken ct = default)
         {
             logger?.Log("Step 1/4: Dropping existing shadow database...");
             _repository.DropAndRecreateDatabase(_shadowDatabase);
+
+            ct.ThrowIfCancellationRequested();
 
             logger?.Log("Step 2/4: Creating migration log table...");
             _repository.EnsureMigrationLogTable(_shadowDatabase, _migrationLogSchemaPath);
@@ -111,6 +114,7 @@ namespace WTW.Diffusion.Core.Services
             logger?.Log("Step 4/4: Executing migrations...");
             for (int i = 0; i < pending.Count; i++)
             {
+                ct.ThrowIfCancellationRequested();
                 MigrationInfo migration = pending[i];
                 logger?.Log($"  [{i + 1}/{pending.Count}] Applying {Path.GetFileName(migration.FileName)}...");
                 _scriptManager.ExecuteMigrationScript(_shadowDatabase, migration);
